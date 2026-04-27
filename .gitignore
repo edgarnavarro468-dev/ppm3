@@ -1,0 +1,5 @@
+.deps/
+.localdeps/
+__pycache__/
+*.pyc
+ppm.db
