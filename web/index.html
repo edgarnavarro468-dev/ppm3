@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PPM Web</title>
+    <link rel="stylesheet" href="/app/styles.css" />
+  </head>
+  <body>
+    <div id="toast" class="toast hidden"></div>
+
+    <div id="auth-view" class="auth-shell">
+      <section class="auth-band">
+        <div class="auth-copy">
+          <p class="eyebrow">PPM WEB MVP</p>
+          <h1>Prueben gastos compartidos y feed social con usuarios reales.</h1>
+          <p class="muted">
+            Esta version web esta pensada para validar interaccion entre amigos antes de pasar a app movil.
+          </p>
+        </div>
+        <div class="auth-panel">
+          <div class="auth-switch">
+            <button id="show-login" class="switch-btn active" type="button">Entrar</button>
+            <button id="show-register" class="switch-btn" type="button">Crear cuenta</button>
+          </div>
+
+          <form id="login-form" class="stack">
+            <label>
+              <span>Correo</span>
+              <input name="email" type="email" required />
+            </label>
+            <label>
+              <span>Contrasena</span>
+              <input name="password" type="password" required />
+            </label>
+            <button class="primary-btn" type="submit">Iniciar sesion</button>
+          </form>
+
+          <form id="register-form" class="stack hidden">
+            <label>
+              <span>Nombre</span>
+              <input name="username" type="text" minlength="2" required />
+            </label>
+            <label>
+              <span>Correo</span>
+              <input name="email" type="email" required />
+            </label>
+            <label>
+              <span>Contrasena</span>
+              <input name="password" type="password" minlength="6" required />
+            </label>
+            <button class="primary-btn" type="submit">Crear cuenta</button>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <div id="app-view" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">PPM</p>
+          <h2>Finanzas sociales</h2>
+          <p class="muted small">Web de prueba para grupos, gastos y feed.</p>
+        </div>
+
+        <div class="user-block">
+          <strong id="current-user-name"></strong>
+          <span id="current-user-email" class="muted small"></span>
+          <button id="logout-btn" class="ghost-btn" type="button">Cerrar sesion</button>
+        </div>
+
+        <section class="sidebar-section">
+          <div class="section-head">
+            <h3>Grupos</h3>
+            <button id="refresh-groups-btn" class="ghost-btn mini-btn" type="button">Actualizar</button>
+          </div>
+          <div id="group-list" class="group-list"></div>
+        </section>
+
+        <section class="sidebar-section">
+          <h3>Nuevo grupo</h3>
+          <form id="group-form" class="stack compact">
+            <input name="name" type="text" placeholder="Nombre del grupo" required />
+            <textarea name="description" rows="3" placeholder="Descripcion corta"></textarea>
+            <label class="small muted" for="group-invite-list">Invitar usuarios</label>
+            <select id="group-invite-list" name="memberIds" multiple></select>
+            <button class="primary-btn" type="submit">Crear grupo</button>
+          </form>
+        </section>
+      </aside>
+
+      <main class="main-shell">
+        <header class="hero-strip">
+          <div>
+            <p class="eyebrow">WEB TEST</p>
+            <h1>Prueben flujos reales entre amigos antes de ir a movil.</h1>
+          </div>
+          <button id="reload-all-btn" class="ghost-btn" type="button">Recargar datos</button>
+        </header>
+
+        <section class="metrics-grid">
+          <article class="metric-panel">
+            <span class="metric-label">Gasto total</span>
+            <strong id="metric-total-expenses" class="metric-value">$0.00</strong>
+          </article>
+          <article class="metric-panel">
+            <span class="metric-label">Lo que pagaste</span>
+            <strong id="metric-total-paid" class="metric-value">$0.00</strong>
+          </article>
+          <article class="metric-panel">
+            <span class="metric-label">Balance neto</span>
+            <strong id="metric-net-balance" class="metric-value">$0.00</strong>
+          </article>
+          <article class="metric-panel">
+            <span class="metric-label">Tus grupos</span>
+            <strong id="metric-group-count" class="metric-value">0</strong>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <section class="panel">
+            <div class="section-head">
+              <h2>Grupo activo</h2>
+              <span id="active-group-name" class="pill">Sin grupo</span>
+            </div>
+            <p id="active-group-description" class="muted">Crea un grupo para empezar a probar.</p>
+            <div id="active-group-members" class="member-list"></div>
+
+            <div id="member-add-wrap" class="inline-form hidden">
+              <select id="member-add-select"></select>
+              <button id="add-member-btn" class="ghost-btn" type="button">Agregar miembro</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>Gasto nuevo</h2>
+            </div>
+            <form id="expense-form" class="stack compact">
+              <select id="expense-payer" name="payerId" required></select>
+              <input name="description" type="text" placeholder="Concepto del gasto" required />
+              <input name="amount" type="number" step="0.01" min="0.01" placeholder="Monto" required />
+              <div>
+                <p class="small muted">Participantes</p>
+                <div id="participant-list" class="checkbox-list"></div>
+              </div>
+              <button class="primary-btn" type="submit">Guardar gasto</button>
+            </form>
+          </section>
+        </section>
+
+        <section class="content-grid lower-grid">
+          <section class="panel">
+            <div class="section-head">
+              <h2>Balances</h2>
+            </div>
+            <div id="balances-list" class="stack compact"></div>
+            <div class="divider"></div>
+            <h3 class="subhead">Liquidaciones sugeridas</h3>
+            <div id="settlements-list" class="stack compact"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head">
+              <h2>Feed social</h2>
+            </div>
+            <div id="feed-list" class="feed-list"></div>
+          </section>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>Actividad reciente</h2>
+          </div>
+          <div id="recent-expenses" class="table-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app/app.js" defer></script>
+  </body>
+</html>

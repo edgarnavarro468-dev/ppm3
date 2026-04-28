@@ -1,8 +1,10 @@
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import joinedload
 
@@ -11,6 +13,7 @@ from backend.security import hash_password, verify_password
 
 
 app = FastAPI(title="PPM Finanzas Sociales API")
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 app.add_middleware(
     CORSMiddleware,
@@ -539,3 +542,7 @@ def get_group_feed(group_id: int):
         ]
     finally:
         session.close()
+
+
+if WEB_DIR.exists():
+    app.mount("/app", StaticFiles(directory=WEB_DIR, html=True), name="web-app")
