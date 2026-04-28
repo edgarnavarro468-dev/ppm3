@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PPM Web</title>
+    <title>PPM Social</title>
     <link rel="stylesheet" href="/app/styles.css" />
   </head>
   <body>
@@ -13,9 +13,9 @@
       <section class="auth-band">
         <div class="auth-copy">
           <p class="eyebrow">PPM WEB</p>
-          <h1>Finanzas sociales para organizar planes, votos y deudas reales.</h1>
+          <h1>Organicen planes, gastos y saldos sin perderse en el proceso.</h1>
           <p class="muted">
-            Prueben con amigos propuestas, votaciones, gastos, anfitrion, liquidaciones manuales y reputacion.
+            Esta version web les ayuda a validar el flujo completo: crear grupo, proponer plan, registrar gastos y cerrar cuentas con claridad.
           </p>
         </div>
         <div class="auth-panel">
@@ -60,7 +60,7 @@
         <div class="brand-block">
           <p class="eyebrow">PPM</p>
           <h2>Finanzas sociales</h2>
-          <p class="muted small">Version web para validar producto con usuarios reales.</p>
+          <p class="muted small">Una vista pensada para entender rapido que sigue en cada grupo.</p>
         </div>
 
         <div class="user-block">
@@ -70,15 +70,49 @@
         </div>
 
         <nav class="nav-grid">
-          <button class="nav-btn active" data-view="dashboard" type="button">Dashboard</button>
-          <button class="nav-btn" data-view="groups" type="button">Grupos</button>
-          <button class="nav-btn" data-view="expenses" type="button">Gastos</button>
-          <button class="nav-btn" data-view="balances" type="button">Balances</button>
-          <button class="nav-btn" data-view="feed" type="button">Feed social</button>
-          <button class="nav-btn" data-view="stats" type="button">Estadisticas</button>
-          <button class="nav-btn" data-view="proposals" type="button">Propuestas</button>
-          <button class="nav-btn" data-view="community" type="button">Comunidad</button>
+          <button class="nav-btn active" data-view="dashboard" type="button">
+            <span class="nav-title">Inicio</span>
+            <span class="nav-copy">Resumen y siguiente paso</span>
+          </button>
+          <button class="nav-btn" data-view="groups" type="button">
+            <span class="nav-title">Grupo</span>
+            <span class="nav-copy">Miembros y decisiones del grupo</span>
+          </button>
+          <button class="nav-btn" data-view="expenses" type="button">
+            <span class="nav-title">Gastos</span>
+            <span class="nav-copy">Registrar y repartir pagos</span>
+          </button>
+          <button class="nav-btn" data-view="balances" type="button">
+            <span class="nav-title">Saldos</span>
+            <span class="nav-copy">Ver quien debe y cerrar cuentas</span>
+          </button>
+          <button class="nav-btn" data-view="proposals" type="button">
+            <span class="nav-title">Planes</span>
+            <span class="nav-copy">Propuestas, votos y eleccion</span>
+          </button>
+          <button class="nav-btn" data-view="feed" type="button">
+            <span class="nav-title">Actividad</span>
+            <span class="nav-copy">Historial reciente del grupo</span>
+          </button>
+          <button class="nav-btn" data-view="community" type="button">
+            <span class="nav-title">Reputacion</span>
+            <span class="nav-copy">Calificaciones y confianza</span>
+          </button>
+          <button class="nav-btn" data-view="stats" type="button">
+            <span class="nav-title">Estadisticas</span>
+            <span class="nav-copy">Lectura de uso y decisiones</span>
+          </button>
         </nav>
+
+        <section class="sidebar-section">
+          <h3>Ruta sugerida</h3>
+          <ol class="flow-list muted small">
+            <li>Crea o elige un grupo.</li>
+            <li>Registra un gasto real.</li>
+            <li>Propongan y voten un plan.</li>
+            <li>Revisen saldos y liquiden.</li>
+          </ol>
+        </section>
 
         <section class="sidebar-section">
           <div class="section-head">
@@ -112,24 +146,80 @@
 
         <section class="metrics-grid">
           <article class="metric-panel">
-            <span class="metric-label">Gasto total</span>
+            <span class="metric-label">Total del grupo</span>
             <strong id="metric-total-expenses" class="metric-value">$0.00</strong>
           </article>
           <article class="metric-panel">
-            <span class="metric-label">Lo que pagaste</span>
+            <span class="metric-label">Lo que tu pagaste</span>
             <strong id="metric-total-paid" class="metric-value">$0.00</strong>
           </article>
           <article class="metric-panel">
-            <span class="metric-label">Balance neto</span>
+            <span class="metric-label">Tu balance neto</span>
             <strong id="metric-net-balance" class="metric-value">$0.00</strong>
           </article>
           <article class="metric-panel">
-            <span class="metric-label">Propuestas</span>
+            <span class="metric-label">Planes creados</span>
             <strong id="metric-proposal-count" class="metric-value">0</strong>
           </article>
         </section>
 
+        <section class="journey-strip">
+          <article class="journey-card">
+            <span class="metric-label">Estado actual</span>
+            <strong id="journey-status-title">Cargando</strong>
+            <p id="journey-status-copy" class="muted small"></p>
+          </article>
+          <article class="journey-card">
+            <span class="metric-label">Siguiente paso</span>
+            <strong id="journey-next-step">Cargando</strong>
+            <button id="journey-action-btn" class="primary-btn mini-btn" type="button">Ir ahora</button>
+          </article>
+          <article class="journey-card">
+            <span class="metric-label">Acciones rapidas</span>
+            <div class="quick-actions">
+              <button class="ghost-btn mini-btn quick-action-btn" data-view="groups" type="button">Ver grupo</button>
+              <button class="ghost-btn mini-btn quick-action-btn" data-view="expenses" type="button">Agregar gasto</button>
+              <button class="ghost-btn mini-btn quick-action-btn" data-view="proposals" type="button">Crear plan</button>
+              <button class="ghost-btn mini-btn quick-action-btn" data-view="balances" type="button">Revisar saldos</button>
+            </div>
+          </article>
+        </section>
+
         <section id="view-dashboard" class="view-section">
+          <div class="content-grid">
+            <section class="panel panel-accent">
+              <div class="section-head">
+                <h2>Que sigue en este grupo</h2>
+                <span class="pill">Guia rapida</span>
+              </div>
+              <div id="setup-checklist" class="checklist"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Atajos utiles</h2>
+              </div>
+              <div class="shortcut-list">
+                <button class="shortcut-card" data-view="groups" type="button">
+                  <strong>Organizar grupo</strong>
+                  <span class="muted small">Miembros, anfitrion y decisiones importantes.</span>
+                </button>
+                <button class="shortcut-card" data-view="expenses" type="button">
+                  <strong>Registrar gasto</strong>
+                  <span class="muted small">Guarda un pago y define quienes participan.</span>
+                </button>
+                <button class="shortcut-card" data-view="proposals" type="button">
+                  <strong>Proponer plan</strong>
+                  <span class="muted small">Sube una idea, voten y elijan.</span>
+                </button>
+                <button class="shortcut-card" data-view="balances" type="button">
+                  <strong>Cerrar cuentas</strong>
+                  <span class="muted small">Revisa saldos y registra liquidaciones.</span>
+                </button>
+              </div>
+            </section>
+          </div>
+
           <div class="content-grid">
             <section class="panel">
               <div class="section-head">
@@ -172,6 +262,7 @@
               <div class="section-head">
                 <h2>Miembros del grupo</h2>
               </div>
+              <p class="muted small">Aqui administran quienes participan y quien puede tomar decisiones clave.</p>
               <div id="group-members-detail" class="member-list"></div>
               <div id="member-add-wrap" class="inline-form hidden">
                 <select id="member-add-select"></select>
@@ -204,6 +295,7 @@
               <div class="section-head">
                 <h2>Nuevo gasto</h2>
               </div>
+              <p class="muted small">Empieza por registrar quien pago, cuanto fue y entre quienes se reparte.</p>
               <form id="expense-form" class="stack compact">
                 <select id="expense-payer" name="payerId" required></select>
                 <input name="description" type="text" placeholder="Concepto del gasto" required />
@@ -241,6 +333,7 @@
               <div class="section-head">
                 <h2>Liquidacion manual</h2>
               </div>
+              <p class="muted small">Usen esta opcion cuando el pago ya se hizo fuera de la app y solo quieren dejar constancia.</p>
               <form id="manual-settlement-form" class="stack compact">
                 <select id="settlement-from-user" name="fromUserId" required></select>
                 <select id="settlement-to-user" name="toUserId" required></select>
@@ -304,6 +397,7 @@
               <div class="section-head">
                 <h2>Nueva propuesta</h2>
               </div>
+              <p class="muted small">Describe la idea como si alguien nuevo al grupo tuviera que entenderla en un vistazo.</p>
               <form id="proposal-form" class="stack compact">
                 <input name="title" type="text" placeholder="Nombre propio de la idea o venta" required />
                 <select name="activityType">
@@ -348,6 +442,7 @@
               <div class="section-head">
                 <h2>Calificar usuarios</h2>
               </div>
+              <p class="muted small">Esta seccion sirve para construir confianza dentro del grupo despues de convivir o pagar.</p>
               <form id="rating-form" class="stack compact">
                 <select id="rating-user" name="ratedUserId" required></select>
                 <select name="score">

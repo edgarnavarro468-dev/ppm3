@@ -21,7 +21,7 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Trebuchet MS", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   color: var(--text);
   background:
     radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 28%),
@@ -115,7 +115,7 @@ button {
 }
 
 .nav-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .switch-btn,
@@ -136,11 +136,31 @@ button {
   color: var(--text);
 }
 
+.nav-btn {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+}
+
+.nav-title {
+  font-weight: 700;
+}
+
+.nav-copy {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 .switch-btn.active,
 .nav-btn.active {
   background: var(--brand);
   border-color: var(--brand);
   color: white;
+}
+
+.nav-btn.active .nav-copy {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .primary-btn,
@@ -248,6 +268,13 @@ textarea {
   gap: 18px;
 }
 
+.flow-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
 .hero-strip {
   display: flex;
   justify-content: space-between;
@@ -265,7 +292,8 @@ textarea {
 }
 
 .metrics-grid,
-.content-grid {
+.content-grid,
+.journey-strip {
   display: grid;
   gap: 18px;
 }
@@ -277,6 +305,24 @@ textarea {
 .metric-panel,
 .panel {
   padding: 18px;
+}
+
+.journey-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.journey-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--shadow);
+}
+
+.panel-accent {
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.06), rgba(255, 255, 255, 0.92));
 }
 
 .metric-label {
@@ -325,7 +371,10 @@ textarea {
 .feed-list,
 .table-list,
 .checkbox-list,
-.stats-list {
+.stats-list,
+.shortcut-list,
+.checklist,
+.quick-actions {
   display: grid;
   gap: 10px;
 }
@@ -337,7 +386,9 @@ textarea {
 .balance-item,
 .settlement-item,
 .info-card,
-.stat-row {
+.stat-row,
+.shortcut-card,
+.check-item {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-soft);
@@ -371,8 +422,61 @@ textarea {
 .feed-item,
 .table-row,
 .info-card,
-.stat-row {
+.stat-row,
+.check-item {
   padding: 12px;
+}
+
+.quick-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shortcut-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shortcut-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  color: inherit;
+}
+
+.shortcut-card,
+.quick-action-btn {
+  transition: 160ms ease;
+}
+
+.shortcut-card:hover,
+.quick-action-btn:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+}
+
+.check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.check-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--brand-dark);
+}
+
+.check-item.done .check-badge {
+  background: rgba(21, 128, 61, 0.14);
+  color: var(--success);
 }
 
 .host-line {
@@ -502,11 +606,24 @@ textarea {
   .auth-band,
   .app-shell,
   .metrics-grid,
-  .content-grid {
+  .content-grid,
+  .journey-strip {
     grid-template-columns: 1fr;
   }
 
   .sidebar {
     position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-strip {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .shortcut-list,
+  .quick-actions {
+    grid-template-columns: 1fr;
   }
 }

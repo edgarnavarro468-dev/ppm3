@@ -2,36 +2,36 @@ const API_BASE = "";
 
 const VIEW_META = {
   dashboard: {
-    title: "Prueben decisiones reales entre amigos antes de ir a movil.",
-    subtitle: "Dashboard con resumen del grupo, feed y la propuesta seleccionada.",
+    title: "Ten claro que esta pasando y que sigue.",
+    subtitle: "Empieza aqui para ver el estado del grupo y entrar rapido a la accion correcta.",
   },
   groups: {
-    title: "El anfitrion y el grupo mandan.",
-    subtitle: "Gestiona miembros, anfitrion y decisiones fuertes como eliminar el grupo.",
+    title: "Ordena al grupo antes de mover dinero.",
+    subtitle: "Gestiona miembros, anfitrion y decisiones importantes del grupo.",
   },
   expenses: {
-    title: "Las deudas compartidas ya viven en serio aqui.",
-    subtitle: "Registra gastos, reparte participantes y elimina deudas por votacion.",
+    title: "Registrar un gasto debe tomar segundos.",
+    subtitle: "Guarda quien pago, cuanto fue y entre quienes se reparte.",
   },
   balances: {
-    title: "Balance claro, sin dramas.",
-    subtitle: "Ve quien debe a quien y marca liquidaciones manuales cuando ya pagaron.",
+    title: "Que todos sepan quien debe y quien ya pago.",
+    subtitle: "Revisa saldos y marca liquidaciones manuales cuando el pago ya se hizo.",
   },
   feed: {
-    title: "El feed social es el distintivo.",
+    title: "Todo lo importante queda trazado.",
     subtitle: "Cada gasto, voto, liquidacion o propuesta queda visible para el grupo.",
   },
   stats: {
-    title: "Las decisiones tambien necesitan lectura.",
+    title: "Las decisiones tambien se leen en datos.",
     subtitle: "Revisa gasto por usuario, votos por propuesta y actividad del grupo.",
   },
   proposals: {
-    title: "Aportacion de idea, votacion y eleccion.",
-    subtitle: "Planea comida, actividad o lugar con datos de proveedor y especificaciones de pago.",
+    title: "Conviertan ideas en planes claros.",
+    subtitle: "Planea comida, actividad o lugar con datos suficientes para votar sin dudas.",
   },
   community: {
-    title: "La reputacion social tambien cuenta.",
-    subtitle: "Califiquen usuarios con titulos y dejen memoria de quien si cumple.",
+    title: "La confianza del grupo tambien importa.",
+    subtitle: "Califiquen usuarios y dejen memoria de quien si cumple.",
   },
 };
 
@@ -69,6 +69,7 @@ document.getElementById("show-register").addEventListener("click", () => toggleA
 document.getElementById("logout-btn").addEventListener("click", logout);
 document.getElementById("refresh-groups-btn").addEventListener("click", bootstrapApp);
 document.getElementById("reload-all-btn").addEventListener("click", bootstrapApp);
+document.getElementById("journey-action-btn").addEventListener("click", handleJourneyAction);
 document.getElementById("add-member-btn").addEventListener("click", handleAddMember);
 document.getElementById("group-delete-vote-btn").addEventListener("click", handleGroupDeleteVote);
 
@@ -81,6 +82,10 @@ proposalForm.addEventListener("submit", handleCreateProposal);
 ratingForm.addEventListener("submit", handleCreateRating);
 
 document.querySelectorAll(".nav-btn").forEach((button) => {
+  button.addEventListener("click", () => setActiveView(button.dataset.view));
+});
+
+document.querySelectorAll(".quick-action-btn, .shortcut-card").forEach((button) => {
   button.addEventListener("click", () => setActiveView(button.dataset.view));
 });
 
@@ -546,6 +551,7 @@ function renderApp() {
   renderHero();
   renderNav();
   renderMetrics();
+  renderJourney();
   renderGroups();
   renderGroupCore();
   renderExpenseForm();
@@ -587,12 +593,108 @@ function renderMetrics() {
   document.getElementById("metric-proposal-count").textContent = String(summary.proposal_count || 0);
 }
 
+function renderJourney() {
+  const titleEl = document.getElementById("journey-status-title");
+  const copyEl = document.getElementById("journey-status-copy");
+  const nextStepEl = document.getElementById("journey-next-step");
+  const actionBtn = document.getElementById("journey-action-btn");
+  const checklist = document.getElementById("setup-checklist");
+
+  const groupReady = Boolean(state.activeGroup);
+  const hasExpenses = state.expenses.length > 0;
+  const hasProposals = state.proposals.length > 0;
+  const hasSettlements = state.settlements.length > 0;
+
+  let statusTitle = "Todavia no hay grupo activo";
+  let statusCopy = "Crea un grupo para empezar a registrar planes, gastos y decisiones.";
+  let nextStep = "Crear o elegir un grupo";
+  let actionView = "groups";
+
+  if (groupReady && !hasExpenses) {
+    statusTitle = "El grupo ya esta listo para operar";
+    statusCopy = "El siguiente paso natural es capturar el primer gasto real para que aparezcan saldos.";
+    nextStep = "Registrar el primer gasto";
+    actionView = "expenses";
+  } else if (groupReady && hasExpenses && !hasProposals) {
+    statusTitle = "Ya hay movimiento economico";
+    statusCopy = "Ahora conviene proponer un plan para validar la parte social y de votacion.";
+    nextStep = "Crear una propuesta";
+    actionView = "proposals";
+  } else if (groupReady && hasExpenses && hasProposals && !hasSettlements) {
+    statusTitle = "El grupo ya usa gastos y planes";
+    statusCopy = "Revisen saldos para confirmar si alguien ya puede liquidar o cerrar cuentas.";
+    nextStep = "Revisar saldos";
+    actionView = "balances";
+  } else if (groupReady) {
+    statusTitle = "El flujo principal ya esta cubierto";
+    statusCopy = "Ya probaron grupo, gastos, planes y liquidaciones. Ahora vale la pena revisar actividad y reputacion.";
+    nextStep = "Ver actividad del grupo";
+    actionView = "feed";
+  }
+
+  titleEl.textContent = statusTitle;
+  copyEl.textContent = statusCopy;
+  nextStepEl.textContent = nextStep;
+  actionBtn.dataset.view = actionView;
+
+  const checklistItems = [
+    {
+      done: groupReady,
+      title: "Grupo activo",
+      copy: groupReady
+        ? `Trabajando en ${state.activeGroup.name}.`
+        : "Sin grupo todavia. Crea uno o selecciona uno para continuar.",
+    },
+    {
+      done: hasExpenses,
+      title: "Primer gasto registrado",
+      copy: hasExpenses
+        ? `${state.expenses.length} gasto(s) cargado(s) en este grupo.`
+        : "Cuando registren el primer gasto, apareceran deudas y saldos.",
+    },
+    {
+      done: hasProposals,
+      title: "Plan o propuesta creada",
+      copy: hasProposals
+        ? `${state.proposals.length} propuesta(s) lista(s) para votar o elegir.`
+        : "Sube una idea clara para que el grupo pueda votar sin friccion.",
+    },
+    {
+      done: hasSettlements || Boolean(state.balances?.settlements?.length),
+      title: "Cierre o liquidacion revisada",
+      copy:
+        hasSettlements || Boolean(state.balances?.settlements?.length)
+          ? "Ya existe historial o sugerencias de liquidacion."
+          : "Todavia no hay liquidaciones; usa la vista de saldos para cerrar cuentas.",
+    },
+  ];
+
+  checklist.innerHTML = checklistItems
+    .map(
+      (item) => `
+        <div class="check-item ${item.done ? "done" : ""}">
+          <span class="check-badge">${item.done ? "OK" : "..."}</span>
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <div class="muted small">${escapeHtml(item.copy)}</div>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function handleJourneyAction() {
+  const targetView = document.getElementById("journey-action-btn").dataset.view || "groups";
+  setActiveView(targetView);
+}
+
 function renderGroups() {
   const wrap = document.getElementById("group-list");
   wrap.innerHTML = "";
 
   if (!state.groups.length) {
-    wrap.innerHTML = '<div class="group-item muted small">Todavia no hay grupos.</div>';
+    wrap.innerHTML = '<div class="group-item muted small">Todavia no hay grupos. Usa el formulario de abajo para crear el primero.</div>';
     return;
   }
 
@@ -631,7 +733,7 @@ function renderGroupCore() {
 
   if (!state.activeGroup) {
     activeName.textContent = "Sin grupo";
-    activeDescription.textContent = "Crea un grupo para empezar.";
+    activeDescription.textContent = "Crea un grupo o elige uno existente para desbloquear gastos, planes y saldos.";
     hostLine.textContent = "";
     deleteSummary.textContent = "Todavia no hay un grupo activo.";
     memberAddWrap.classList.add("hidden");
@@ -693,7 +795,7 @@ function renderExpenseForm() {
   ratingUser.innerHTML = "";
 
   if (!state.activeGroup) {
-    payerSelect.innerHTML = '<option value="">Primero crea un grupo</option>';
+    payerSelect.innerHTML = '<option value="">Primero crea o elige un grupo</option>';
     settlementFrom.innerHTML = '<option value="">Sin grupo</option>';
     settlementTo.innerHTML = '<option value="">Sin grupo</option>';
     ratingUser.innerHTML = '<option value="">Sin grupo</option>';
@@ -728,7 +830,7 @@ function renderExpenses() {
   wrap.innerHTML = "";
 
   if (!state.expenses.length) {
-    wrap.innerHTML = '<div class="table-row muted small">Todavia no hay gastos registrados.</div>';
+    wrap.innerHTML = '<div class="table-row muted small">Todavia no hay gastos registrados. Captura uno para que el grupo empiece a generar saldos.</div>';
     return;
   }
 
@@ -769,8 +871,8 @@ function renderBalances() {
   historyEl.innerHTML = "";
 
   if (!state.balances) {
-    balancesEl.innerHTML = '<div class="balance-item muted small">No hay balances todavia.</div>';
-    settlementsEl.innerHTML = '<div class="settlement-item muted small">Sin datos.</div>';
+    balancesEl.innerHTML = '<div class="balance-item muted small">No hay balances todavia. Apareceran despues del primer gasto.</div>';
+    settlementsEl.innerHTML = '<div class="settlement-item muted small">Sin datos por ahora.</div>';
   } else {
     state.balances.balances.forEach((entry) => {
       const div = document.createElement("div");
@@ -820,7 +922,7 @@ function renderFeed() {
   wrap.innerHTML = "";
 
   if (!state.feed.length) {
-    wrap.innerHTML = '<div class="feed-item muted small">Todavia no hay actividad.</div>';
+    wrap.innerHTML = '<div class="feed-item muted small">Todavia no hay actividad. Aqui veran el historial del grupo en cuanto empiecen a usarlo.</div>';
     return;
   }
 
@@ -841,7 +943,7 @@ function renderFeedPreview() {
 
   const previewItems = state.feed.slice(0, 5);
   if (!previewItems.length) {
-    wrap.innerHTML = '<div class="feed-item muted small">Todavia no hay actividad.</div>';
+    wrap.innerHTML = '<div class="feed-item muted small">Todavia no hay actividad reciente.</div>';
     return;
   }
 
@@ -898,7 +1000,7 @@ function renderSelectedProposal() {
 
   const selectedProposal = state.stats?.selected_proposal || state.proposals.find((proposal) => proposal.status === "selected");
   if (!selectedProposal) {
-    wrap.innerHTML = '<div class="table-row muted small">Todavia no hay propuesta elegida.</div>';
+    wrap.innerHTML = '<div class="table-row muted small">Todavia no hay propuesta elegida. Primero crean una idea y luego la votan en la vista de Planes.</div>';
     return;
   }
 
@@ -965,7 +1067,7 @@ function renderProposals() {
   wrap.innerHTML = "";
 
   if (!state.proposals.length) {
-    wrap.innerHTML = '<div class="table-row muted small">Todavia no hay propuestas para votar.</div>';
+    wrap.innerHTML = '<div class="table-row muted small">Todavia no hay propuestas para votar. Crea una idea clara para que el grupo compare opciones.</div>';
     return;
   }
 
