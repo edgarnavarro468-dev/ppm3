@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 
@@ -26,7 +26,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     memberships = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
-    paid_expenses = relationship("Expense", back_populates="payer")
+    paid_expenses = relationship("Expense", back_populates="payer", foreign_keys="Expense.payer_id")
 
 
 class Group(Base):
@@ -38,9 +38,14 @@ class Group(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    creator = relationship("User", foreign_keys=[created_by])
     members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     expenses = relationship("Expense", back_populates="group", cascade="all, delete-orphan")
     feed_events = relationship("FeedEvent", back_populates="group", cascade="all, delete-orphan")
+    proposals = relationship("Proposal", back_populates="group", cascade="all, delete-orphan")
+    settlements = relationship("Settlement", back_populates="group", cascade="all, delete-orphan")
+    ratings = relationship("UserRating", back_populates="group", cascade="all, delete-orphan")
+    decisions = relationship("GroupDecision", back_populates="group", cascade="all, delete-orphan")
 
 
 class GroupMember(Base):
@@ -66,7 +71,7 @@ class Expense(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     group = relationship("Group", back_populates="expenses")
-    payer = relationship("User", back_populates="paid_expenses")
+    payer = relationship("User", back_populates="paid_expenses", foreign_keys=[payer_id])
     participants = relationship("ExpenseParticipant", back_populates="expense", cascade="all, delete-orphan")
 
 
@@ -94,6 +99,111 @@ class FeedEvent(Base):
 
     group = relationship("Group", back_populates="feed_events")
     actor = relationship("User")
+
+
+class Proposal(Base):
+    __tablename__ = "proposals"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    creator_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    payer_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    title = Column(String(160), nullable=False)
+    details = Column(Text, default="", nullable=False)
+    activity_type = Column(String(40), default="actividad", nullable=False)
+    availability_text = Column(Text, default="", nullable=False)
+    provider_name = Column(String(160), default="", nullable=False)
+    provider_details = Column(Text, default="", nullable=False)
+    payment_due_date = Column(String(40), default="", nullable=False)
+    scheduled_for_date = Column(String(40), default="", nullable=False)
+    total_amount_cents = Column(Integer, nullable=False)
+    payment_method = Column(String(80), default="", nullable=False)
+    confirmation_status = Column(String(40), default="pendiente", nullable=False)
+    is_shared_debt = Column(Boolean, default=True, nullable=False)
+    status = Column(String(40), default="open", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    group = relationship("Group", back_populates="proposals")
+    creator = relationship("User", foreign_keys=[creator_id])
+    payer_user = relationship("User", foreign_keys=[payer_user_id])
+    votes = relationship("ProposalVote", back_populates="proposal", cascade="all, delete-orphan")
+
+
+class ProposalVote(Base):
+    __tablename__ = "proposal_votes"
+
+    id = Column(Integer, primary_key=True)
+    proposal_id = Column(Integer, ForeignKey("proposals.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    proposal = relationship("Proposal", back_populates="votes")
+    user = relationship("User")
+
+
+class Settlement(Base):
+    __tablename__ = "settlements"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    to_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount_cents = Column(Integer, nullable=False)
+    notes = Column(Text, default="", nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    group = relationship("Group", back_populates="settlements")
+    from_user = relationship("User", foreign_keys=[from_user_id])
+    to_user = relationship("User", foreign_keys=[to_user_id])
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class UserRating(Base):
+    __tablename__ = "user_ratings"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    rater_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    rated_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    score = Column(Integer, nullable=False)
+    title = Column(String(80), default="", nullable=False)
+    comment = Column(Text, default="", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    group = relationship("Group", back_populates="ratings")
+    rater = relationship("User", foreign_keys=[rater_id])
+    rated_user = relationship("User", foreign_keys=[rated_user_id])
+
+
+class GroupDecision(Base):
+    __tablename__ = "group_decisions"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    requested_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    decision_type = Column(String(40), nullable=False)
+    target_expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=True, index=True)
+    mode = Column(String(20), default="majority", nullable=False)
+    status = Column(String(20), default="open", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    group = relationship("Group", back_populates="decisions")
+    requester = relationship("User", foreign_keys=[requested_by])
+    target_expense = relationship("Expense")
+    votes = relationship("GroupDecisionVote", back_populates="decision", cascade="all, delete-orphan")
+
+
+class GroupDecisionVote(Base):
+    __tablename__ = "group_decision_votes"
+
+    id = Column(Integer, primary_key=True)
+    decision_id = Column(Integer, ForeignKey("group_decisions.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    decision = relationship("GroupDecision", back_populates="votes")
+    user = relationship("User")
 
 
 Base.metadata.create_all(engine)

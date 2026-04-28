@@ -1,5 +1,6 @@
 .deps/
 .localdeps/
+.venv/
 __pycache__/
 *.pyc
 ppm.db

@@ -12,10 +12,10 @@
     <div id="auth-view" class="auth-shell">
       <section class="auth-band">
         <div class="auth-copy">
-          <p class="eyebrow">PPM WEB MVP</p>
-          <h1>Prueben gastos compartidos y feed social con usuarios reales.</h1>
+          <p class="eyebrow">PPM WEB</p>
+          <h1>Finanzas sociales para organizar planes, votos y deudas reales.</h1>
           <p class="muted">
-            Esta version web esta pensada para validar interaccion entre amigos antes de pasar a app movil.
+            Prueben con amigos propuestas, votaciones, gastos, anfitrion, liquidaciones manuales y reputacion.
           </p>
         </div>
         <div class="auth-panel">
@@ -60,7 +60,7 @@
         <div class="brand-block">
           <p class="eyebrow">PPM</p>
           <h2>Finanzas sociales</h2>
-          <p class="muted small">Web de prueba para grupos, gastos y feed.</p>
+          <p class="muted small">Version web para validar producto con usuarios reales.</p>
         </div>
 
         <div class="user-block">
@@ -68,6 +68,17 @@
           <span id="current-user-email" class="muted small"></span>
           <button id="logout-btn" class="ghost-btn" type="button">Cerrar sesion</button>
         </div>
+
+        <nav class="nav-grid">
+          <button class="nav-btn active" data-view="dashboard" type="button">Dashboard</button>
+          <button class="nav-btn" data-view="groups" type="button">Grupos</button>
+          <button class="nav-btn" data-view="expenses" type="button">Gastos</button>
+          <button class="nav-btn" data-view="balances" type="button">Balances</button>
+          <button class="nav-btn" data-view="feed" type="button">Feed social</button>
+          <button class="nav-btn" data-view="stats" type="button">Estadisticas</button>
+          <button class="nav-btn" data-view="proposals" type="button">Propuestas</button>
+          <button class="nav-btn" data-view="community" type="button">Comunidad</button>
+        </nav>
 
         <section class="sidebar-section">
           <div class="section-head">
@@ -81,7 +92,7 @@
           <h3>Nuevo grupo</h3>
           <form id="group-form" class="stack compact">
             <input name="name" type="text" placeholder="Nombre del grupo" required />
-            <textarea name="description" rows="3" placeholder="Descripcion corta"></textarea>
+            <textarea name="description" rows="3" placeholder="Descripcion del grupo"></textarea>
             <label class="small muted" for="group-invite-list">Invitar usuarios</label>
             <select id="group-invite-list" name="memberIds" multiple></select>
             <button class="primary-btn" type="submit">Crear grupo</button>
@@ -92,8 +103,9 @@
       <main class="main-shell">
         <header class="hero-strip">
           <div>
-            <p class="eyebrow">WEB TEST</p>
-            <h1>Prueben flujos reales entre amigos antes de ir a movil.</h1>
+            <p class="eyebrow">PPM SOCIAL LAYER</p>
+            <h1 id="hero-title">Prueben decisiones reales entre amigos antes de ir a movil.</h1>
+            <p id="hero-subtitle" class="muted hero-muted"></p>
           </div>
           <button id="reload-all-btn" class="ghost-btn" type="button">Recargar datos</button>
         </header>
@@ -112,67 +124,255 @@
             <strong id="metric-net-balance" class="metric-value">$0.00</strong>
           </article>
           <article class="metric-panel">
-            <span class="metric-label">Tus grupos</span>
-            <strong id="metric-group-count" class="metric-value">0</strong>
+            <span class="metric-label">Propuestas</span>
+            <strong id="metric-proposal-count" class="metric-value">0</strong>
           </article>
         </section>
 
-        <section class="content-grid">
-          <section class="panel">
-            <div class="section-head">
-              <h2>Grupo activo</h2>
-              <span id="active-group-name" class="pill">Sin grupo</span>
-            </div>
-            <p id="active-group-description" class="muted">Crea un grupo para empezar a probar.</p>
-            <div id="active-group-members" class="member-list"></div>
-
-            <div id="member-add-wrap" class="inline-form hidden">
-              <select id="member-add-select"></select>
-              <button id="add-member-btn" class="ghost-btn" type="button">Agregar miembro</button>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="section-head">
-              <h2>Gasto nuevo</h2>
-            </div>
-            <form id="expense-form" class="stack compact">
-              <select id="expense-payer" name="payerId" required></select>
-              <input name="description" type="text" placeholder="Concepto del gasto" required />
-              <input name="amount" type="number" step="0.01" min="0.01" placeholder="Monto" required />
-              <div>
-                <p class="small muted">Participantes</p>
-                <div id="participant-list" class="checkbox-list"></div>
+        <section id="view-dashboard" class="view-section">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Grupo activo</h2>
+                <span id="active-group-name" class="pill">Sin grupo</span>
               </div>
-              <button class="primary-btn" type="submit">Guardar gasto</button>
-            </form>
-          </section>
+              <p id="active-group-description" class="muted">Crea un grupo para empezar.</p>
+              <div id="active-group-host" class="host-line muted small"></div>
+              <div id="active-group-members" class="member-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Propuesta elegida</h2>
+              </div>
+              <div id="selected-proposal-card" class="table-list"></div>
+            </section>
+          </div>
+
+          <div class="content-grid lower-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Actividad reciente</h2>
+              </div>
+              <div id="recent-expenses" class="table-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Feed social</h2>
+              </div>
+              <div id="feed-preview" class="feed-list"></div>
+            </section>
+          </div>
         </section>
 
-        <section class="content-grid lower-grid">
-          <section class="panel">
-            <div class="section-head">
-              <h2>Balances</h2>
-            </div>
-            <div id="balances-list" class="stack compact"></div>
-            <div class="divider"></div>
-            <h3 class="subhead">Liquidaciones sugeridas</h3>
-            <div id="settlements-list" class="stack compact"></div>
-          </section>
+        <section id="view-groups" class="view-section hidden">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Miembros del grupo</h2>
+              </div>
+              <div id="group-members-detail" class="member-list"></div>
+              <div id="member-add-wrap" class="inline-form hidden">
+                <select id="member-add-select"></select>
+                <button id="add-member-btn" class="ghost-btn" type="button">Agregar miembro</button>
+              </div>
+            </section>
 
+            <section class="panel">
+              <div class="section-head">
+                <h2>Eliminar grupo por votacion</h2>
+              </div>
+              <p class="muted small">
+                Puedes iniciar o sumarte a una votacion para eliminar el grupo por mayoria o por unanimidad.
+              </p>
+              <div class="inline-form">
+                <select id="group-delete-mode">
+                  <option value="majority">Mayoria</option>
+                  <option value="all">Todos</option>
+                </select>
+                <button id="group-delete-vote-btn" class="danger-btn" type="button">Votar eliminar</button>
+              </div>
+              <div id="group-delete-summary" class="info-card muted small"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-expenses" class="view-section hidden">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Nuevo gasto</h2>
+              </div>
+              <form id="expense-form" class="stack compact">
+                <select id="expense-payer" name="payerId" required></select>
+                <input name="description" type="text" placeholder="Concepto del gasto" required />
+                <input name="amount" type="number" step="0.01" min="0.01" max="1000000" placeholder="Monto" required />
+                <div>
+                  <p class="small muted">Participantes</p>
+                  <div id="participant-list" class="checkbox-list"></div>
+                </div>
+                <button class="primary-btn" type="submit">Guardar gasto</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Deudas del grupo</h2>
+              </div>
+              <div id="expense-list" class="table-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-balances" class="view-section hidden">
+          <div class="content-grid lower-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Balances actuales</h2>
+              </div>
+              <div id="balances-list" class="stack compact"></div>
+              <div class="divider"></div>
+              <h3 class="subhead">Liquidaciones sugeridas</h3>
+              <div id="settlements-list" class="stack compact"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Liquidacion manual</h2>
+              </div>
+              <form id="manual-settlement-form" class="stack compact">
+                <select id="settlement-from-user" name="fromUserId" required></select>
+                <select id="settlement-to-user" name="toUserId" required></select>
+                <input name="amount" type="number" step="0.01" min="0.01" max="1000000" placeholder="Monto" required />
+                <textarea name="notes" rows="3" placeholder="Notas o contexto"></textarea>
+                <button class="primary-btn" type="submit">Marcar liquidacion</button>
+              </form>
+              <div class="divider"></div>
+              <h3 class="subhead">Historial manual</h3>
+              <div id="settlement-history" class="table-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-feed" class="view-section hidden">
           <section class="panel">
             <div class="section-head">
-              <h2>Feed social</h2>
+              <h2>Feed social completo</h2>
             </div>
             <div id="feed-list" class="feed-list"></div>
           </section>
         </section>
 
-        <section class="panel">
-          <div class="section-head">
-            <h2>Actividad reciente</h2>
+        <section id="view-stats" class="view-section hidden">
+          <div class="content-grid lower-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Gastos por usuario</h2>
+              </div>
+              <div id="stats-spend" class="stats-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Votos por propuesta</h2>
+              </div>
+              <div id="stats-proposals" class="stats-list"></div>
+            </section>
           </div>
-          <div id="recent-expenses" class="table-list"></div>
+
+          <div class="content-grid lower-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Actividad del grupo</h2>
+              </div>
+              <div id="stats-activities" class="stats-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Usuarios mejor valorados</h2>
+              </div>
+              <div id="stats-top-rated" class="table-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-proposals" class="view-section hidden">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Nueva propuesta</h2>
+              </div>
+              <form id="proposal-form" class="stack compact">
+                <input name="title" type="text" placeholder="Nombre propio de la idea o venta" required />
+                <select name="activityType">
+                  <option value="comida">Comida</option>
+                  <option value="actividad">Actividad</option>
+                  <option value="lugar">Lugar</option>
+                </select>
+                <textarea name="details" rows="3" placeholder="Aportacion de idea o contexto"></textarea>
+                <textarea name="availabilityText" rows="2" placeholder="Disponibilidad"></textarea>
+                <input name="providerName" type="text" placeholder="Proveedor" />
+                <textarea name="providerDetails" rows="2" placeholder="Datos del proveedor"></textarea>
+                <select id="proposal-payer-user" name="payerUserId"></select>
+                <input name="paymentDueDate" type="date" />
+                <input name="scheduledForDate" type="date" />
+                <input name="totalAmount" type="number" step="0.01" min="0.01" max="1000000" placeholder="Total del servicio" required />
+                <input name="paymentMethod" type="text" placeholder="Metodo de pago" />
+                <select name="confirmationStatus">
+                  <option value="pendiente">Pendiente</option>
+                  <option value="confirmado">Confirmado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+                <label class="inline-check">
+                  <input name="isSharedDebt" type="checkbox" checked />
+                  <span>Esto se considera deuda compartida</span>
+                </label>
+                <button class="primary-btn" type="submit">Crear propuesta</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Votacion y eleccion</h2>
+              </div>
+              <div id="proposal-list" class="table-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-community" class="view-section hidden">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Calificar usuarios</h2>
+              </div>
+              <form id="rating-form" class="stack compact">
+                <select id="rating-user" name="ratedUserId" required></select>
+                <select name="score">
+                  <option value="5">5</option>
+                  <option value="4">4</option>
+                  <option value="3">3</option>
+                  <option value="2">2</option>
+                  <option value="1">1</option>
+                </select>
+                <input name="title" type="text" placeholder="Titulo o etiqueta" required />
+                <textarea name="comment" rows="3" placeholder="Comentario"></textarea>
+                <button class="primary-btn" type="submit">Guardar calificacion</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Ranking del grupo</h2>
+              </div>
+              <div id="rating-leaderboard" class="table-list"></div>
+              <div class="divider"></div>
+              <h3 class="subhead">Ultimas calificaciones</h3>
+              <div id="rating-history" class="table-list"></div>
+            </section>
+          </div>
         </section>
       </main>
     </div>

@@ -1,6 +1,3 @@
 fastapi
 uvicorn
 sqlalchemy
-streamlit
-requests
-plotly

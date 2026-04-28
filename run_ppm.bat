@@ -1,19 +1,26 @@
 @echo off
-title PPM - Finanzas Sociales
+title PPM - Web Finanzas Sociales
 
 echo ========================================
-echo         PPM - Finanzas Sociales
+echo       PPM - Web Finanzas Sociales
 echo ========================================
 echo.
 
 set "PYTHON_CMD="
-where py >nul 2>nul
-if %errorlevel%==0 (
-    set "PYTHON_CMD=py"
-) else (
-    where python >nul 2>nul
+
+if exist ".venv\Scripts\python.exe" (
+    set "PYTHON_CMD=.venv\Scripts\python.exe"
+)
+
+if "%PYTHON_CMD%"=="" (
+    where py >nul 2>nul
     if %errorlevel%==0 (
-        set "PYTHON_CMD=python"
+        set "PYTHON_CMD=py"
+    ) else (
+        where python >nul 2>nul
+        if %errorlevel%==0 (
+            set "PYTHON_CMD=python"
+        )
     )
 )
 
@@ -28,26 +35,11 @@ if "%PYTHON_CMD%"=="" (
     exit /b 1
 )
 
-if not exist ".localdeps" (
-    echo Instalando dependencias locales...
-    %PYTHON_CMD% -m pip install -r requirements.txt --target .localdeps
-    if errorlevel 1 (
-        echo No se pudieron instalar las dependencias.
-        pause
-        exit /b 1
-    )
-)
-
-echo Iniciando backend en http://localhost:8000
-start "PPM Backend" /min cmd /k "%PYTHON_CMD% backend\run_backend.py"
-
-timeout /t 2 /nobreak > nul
-
-echo Iniciando frontend en http://localhost:8501
-start "PPM Frontend" /min cmd /k "%PYTHON_CMD% frontend\run_frontend.py"
+echo Iniciando servidor web en http://localhost:8000/app/
+start "PPM Web" /min cmd /k "%PYTHON_CMD% -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000"
 
 echo.
-echo Backend:  http://localhost:8000
-echo Frontend: http://localhost:8501
+echo App web:  http://localhost:8000/app/
+echo API:      http://localhost:8000
 echo.
-echo Puedes cerrar esta ventana. La app seguira en las otras dos.
+echo Puedes cerrar esta ventana. La app seguira corriendo en la otra.
