@@ -1,8 +1,12 @@
 from collections import defaultdict
+from collections import deque
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime
 from pathlib import Path
+from time import time
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -21,6 +25,7 @@ from backend.database import (
     SessionLocal,
     Settlement,
     User,
+    UserContact,
     UserRating,
 )
 from backend.security import hash_password, verify_password
@@ -32,6 +37,19 @@ MAX_AMOUNT_CENTS = 100000000
 ALLOWED_ACTIVITIES = {"comida", "actividad", "lugar"}
 ALLOWED_CONFIRMATION = {"pendiente", "confirmado", "cancelado"}
 ALLOWED_DECISION_MODES = {"majority", "all"}
+ALLOWED_GROUP_AUTO_ACTIONS = {"none", "suspend", "delete"}
+RATE_LIMIT_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+RATE_LIMIT_RULES = {
+    "auth_login": (8, 60),
+    "auth_register": (4, 600),
+    "user_search": (45, 60),
+    "contact_add": (20, 60),
+    "profile_update": (12, 300),
+    "group_create": (8, 300),
+    "expense_create": (20, 60),
+    "settlement_create": (16, 60),
+    "proposal_create": (12, 120),
+}
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,15 +60,43 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' https: data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
+
+
 class RegisterInput(BaseModel):
     username: str = Field(min_length=2, max_length=120)
+    first_name: str = Field(default="", max_length=120)
+    last_name: str = Field(default="", max_length=120)
     email: str
-    password: str = Field(min_length=6, max_length=120)
+    phone_number: str = Field(default="", max_length=40)
+    avatar_url: str = Field(default="", max_length=500)
+    password: str = Field(min_length=8, max_length=120)
+    website: str = ""
+    form_started_at: float = 0
 
 
 class LoginInput(BaseModel):
     email: str
     password: str
+    website: str = ""
+    form_started_at: float = 0
 
 
 class GroupCreateInput(BaseModel):
@@ -58,6 +104,8 @@ class GroupCreateInput(BaseModel):
     description: str = ""
     creator_id: int
     member_ids: list[int] = []
+    ends_at: str = ""
+    auto_close_action: str = "none"
 
 
 class MemberAddInput(BaseModel):
@@ -80,9 +128,11 @@ class ProposalCreateInput(BaseModel):
     availability_text: str = ""
     provider_name: str = ""
     provider_details: str = ""
+    provider_url: str = ""
     payer_user_id: int | None = None
     payment_due_date: str = ""
     scheduled_for_date: str = ""
+    vote_deadline: str = ""
     total_amount: float = Field(gt=0)
     payment_method: str = ""
     confirmation_status: str = "pendiente"
@@ -105,6 +155,10 @@ class SettlementCreateInput(BaseModel):
     notes: str = ""
 
 
+class SettlementConfirmInput(BaseModel):
+    actor_id: int
+
+
 class RatingCreateInput(BaseModel):
     rater_id: int
     rated_user_id: int
@@ -116,6 +170,19 @@ class RatingCreateInput(BaseModel):
 class DecisionVoteInput(BaseModel):
     user_id: int
     mode: str = "majority"
+
+
+class ProfileUpdateInput(BaseModel):
+    username: str = Field(min_length=2, max_length=120)
+    first_name: str = Field(default="", max_length=120)
+    last_name: str = Field(default="", max_length=120)
+    phone_number: str = Field(default="", max_length=40)
+    avatar_url: str = Field(default="", max_length=500)
+
+
+class ContactCreateInput(BaseModel):
+    contact_user_id: int
+    nickname: str = Field(default="", max_length=120)
 
 
 def amount_to_cents(amount: float) -> int:
@@ -153,6 +220,37 @@ def validate_confirmation_status(status: str) -> str:
     return normalized
 
 
+def validate_group_auto_action(action: str) -> str:
+    normalized = (action or "none").strip().lower()
+    if normalized not in ALLOWED_GROUP_AUTO_ACTIONS:
+        raise HTTPException(status_code=400, detail="Accion de cierre de grupo invalida.")
+    return normalized
+
+
+def normalize_datetime_string(value: str) -> str:
+    return (value or "").strip()
+
+
+def parse_datetime_string(value: str) -> datetime | None:
+    normalized = normalize_datetime_string(value)
+    if not normalized:
+        return None
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def validate_optional_url(value: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="La URL debe empezar con http:// o https:// y ser valida.")
+    return normalized[:500]
+
+
 def majority_threshold(member_count: int) -> int:
     return (member_count // 2) + 1
 
@@ -175,11 +273,91 @@ def rating_badge(score: float) -> str:
     return "Modo fantasma"
 
 
+def clean_name(value: str) -> str:
+    return (value or "").strip()
+
+
+def clean_phone(value: str) -> str:
+    raw = "".join(character for character in (value or "").strip() if character.isdigit() or character in "+-() ")
+    digits = "".join(character for character in raw if character.isdigit())
+    if digits and len(digits) < 7:
+        raise HTTPException(status_code=400, detail="El telefono parece demasiado corto.")
+    return raw[:40]
+
+
+def clean_avatar_url(value: str) -> str:
+    return validate_optional_url(value)
+
+
+def validate_password_strength(value: str) -> str:
+    password = value or ""
+    has_letter = any(character.isalpha() for character in password)
+    has_digit = any(character.isdigit() for character in password)
+    if len(password) < 8 or not has_letter or not has_digit:
+        raise HTTPException(
+            status_code=400,
+            detail="La contrasena debe tener al menos 8 caracteres e incluir letras y numeros.",
+        )
+    return password
+
+
+def client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if forwarded_for:
+        return forwarded_for
+    return request.client.host if request.client else "unknown"
+
+
+def enforce_rate_limit(request: Request, action: str) -> None:
+    limit, window_seconds = RATE_LIMIT_RULES[action]
+    bucket_key = f"{action}:{client_ip(request)}"
+    bucket = RATE_LIMIT_BUCKETS[bucket_key]
+    now = time()
+
+    while bucket and now - bucket[0] > window_seconds:
+        bucket.popleft()
+
+    if len(bucket) >= limit:
+        raise HTTPException(status_code=429, detail="Se detectaron demasiados intentos. Espera un momento.")
+
+    bucket.append(now)
+
+
+def enforce_honeypot(payload) -> None:
+    if getattr(payload, "website", "").strip():
+        raise HTTPException(status_code=400, detail="Solicitud rechazada.")
+
+    form_started_at = float(getattr(payload, "form_started_at", 0) or 0)
+    if form_started_at and (time() - form_started_at) < 1.2:
+        raise HTTPException(status_code=400, detail="Envio demasiado rapido. Intenta de nuevo.")
+
+
+def display_name_for_user(user: User) -> str:
+    full_name = " ".join(part for part in [(user.first_name or "").strip(), (user.last_name or "").strip()] if part).strip()
+    return full_name or user.username
+
+
 def serialize_user(user: User) -> dict:
+    full_name = " ".join(part for part in [(user.first_name or "").strip(), (user.last_name or "").strip()] if part).strip()
     return {
         "id": user.id,
         "username": user.username,
         "email": user.email,
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+        "full_name": full_name,
+        "display_name": full_name or user.username,
+        "phone_number": user.phone_number or "",
+        "avatar_url": user.avatar_url or "",
+    }
+
+
+def serialize_contact(contact: UserContact) -> dict:
+    return {
+        "id": contact.id,
+        "nickname": contact.nickname,
+        "created_at": contact.created_at.isoformat(),
+        "user": serialize_user(contact.contact_user),
     }
 
 
@@ -204,15 +382,40 @@ def serialize_group(group: Group) -> dict:
         (decision for decision in group.decisions if decision.decision_type == "group_delete" and decision.status == "open"),
         None,
     )
+    net_totals = defaultdict(int)
+    for member in members:
+        net_totals[member.user_id] = 0
+    for expense in getattr(group, "expenses", []) or []:
+        net_totals[expense.payer_id] += expense.amount_cents
+        for participant in expense.participants:
+            net_totals[participant.user_id] -= participant.share_cents
+    for settlement in getattr(group, "settlements", []) or []:
+        net_totals[settlement.from_user_id] += settlement.amount_cents
+        net_totals[settlement.to_user_id] -= settlement.amount_cents
+    pending_member_count = len([amount for amount in net_totals.values() if amount < 0])
+    settled_member_count = len([amount for amount in net_totals.values() if amount == 0])
+    payment_status = "sin_movimientos"
+    if not getattr(group, "expenses", []) and not getattr(group, "settlements", []):
+        payment_status = "sin_movimientos"
+    elif pending_member_count:
+        payment_status = "pendientes"
+    else:
+        payment_status = "pagado"
     return {
         "id": group.id,
         "name": group.name,
         "description": group.description,
+        "status": group.status,
+        "ends_at": group.ends_at,
+        "auto_close_action": group.auto_close_action,
         "created_by": group.created_by,
         "created_at": group.created_at.isoformat(),
         "host": serialize_user(group.creator),
         "members": [serialize_user(member.user) for member in members],
         "member_count": len(members),
+        "payment_status": payment_status,
+        "pending_member_count": pending_member_count,
+        "settled_member_count": settled_member_count,
         "active_group_delete_vote": serialize_decision(delete_decision, len(members)),
     }
 
@@ -249,8 +452,10 @@ def serialize_proposal(proposal: Proposal, member_count: int) -> dict:
         "availability_text": proposal.availability_text,
         "provider_name": proposal.provider_name,
         "provider_details": proposal.provider_details,
+        "provider_url": proposal.provider_url,
         "payment_due_date": proposal.payment_due_date,
         "scheduled_for_date": proposal.scheduled_for_date,
+        "vote_deadline": proposal.vote_deadline,
         "total_amount": cents_to_amount(proposal.total_amount_cents),
         "payment_method": proposal.payment_method,
         "confirmation_status": proposal.confirmation_status,
@@ -271,6 +476,9 @@ def serialize_settlement(settlement: Settlement) -> dict:
         "to_user": serialize_user(settlement.to_user),
         "amount": cents_to_amount(settlement.amount_cents),
         "notes": settlement.notes,
+        "received_confirmed": settlement.received_confirmed,
+        "received_confirmed_at": settlement.received_confirmed_at,
+        "received_confirmed_by": serialize_user(settlement.confirmer) if settlement.confirmer else None,
         "created_by": serialize_user(settlement.creator),
         "created_at": settlement.created_at.isoformat(),
     }
@@ -314,6 +522,36 @@ def ensure_group_member(group: Group, user_id: int) -> None:
 def ensure_group_host(group: Group, user_id: int) -> None:
     if group.created_by != user_id:
         raise HTTPException(status_code=403, detail="Solo el anfitrion del grupo puede hacer eso.")
+
+
+def ensure_group_active(group: Group) -> None:
+    if group.status != "active":
+        raise HTTPException(status_code=400, detail="Este grupo esta suspendido o cerrado y ya no admite cambios.")
+
+
+def sync_group_lifecycle(session) -> None:
+    groups = session.query(Group).all()
+    now = datetime.utcnow()
+    changed = False
+
+    for group in groups:
+        if group.status != "active":
+            continue
+        ends_at = parse_datetime_string(group.ends_at)
+        if not ends_at or ends_at > now:
+            continue
+
+        action = validate_group_auto_action(group.auto_close_action)
+        if action == "delete":
+            session.delete(group)
+            changed = True
+            continue
+        if action == "suspend":
+            group.status = "suspended"
+            changed = True
+
+    if changed:
+        session.commit()
 
 
 def build_group_balance_payload(group: Group) -> dict:
@@ -478,9 +716,11 @@ def root():
 
 
 @app.post("/auth/register")
-def register_user(payload: RegisterInput):
+def register_user(payload: RegisterInput, request: Request):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "auth_register")
+        enforce_honeypot(payload)
         email = payload.email.strip().lower()
         username = payload.username.strip()
         existing_user = session.query(User).filter(User.email == email).first()
@@ -489,8 +729,12 @@ def register_user(payload: RegisterInput):
 
         user = User(
             username=username,
+            first_name=clean_name(payload.first_name),
+            last_name=clean_name(payload.last_name),
             email=email,
-            password_hash=hash_password(payload.password),
+            phone_number=clean_phone(payload.phone_number),
+            avatar_url=clean_avatar_url(payload.avatar_url),
+            password_hash=hash_password(validate_password_strength(payload.password)),
         )
         session.add(user)
         session.commit()
@@ -501,9 +745,11 @@ def register_user(payload: RegisterInput):
 
 
 @app.post("/auth/login")
-def login_user(payload: LoginInput):
+def login_user(payload: LoginInput, request: Request):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "auth_login")
+        enforce_honeypot(payload)
         email = payload.email.strip().lower()
         user = session.query(User).filter(User.email == email).first()
         if not user or not verify_password(payload.password, user.password_hash):
@@ -514,11 +760,114 @@ def login_user(payload: LoginInput):
 
 
 @app.get("/users")
-def list_users():
+def list_users(request: Request, q: str = Query(default="", max_length=120)):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "user_search")
+        query_text = (q or "").strip().lower()
         users = session.query(User).order_by(User.username.asc()).all()
+        if query_text:
+            users = [
+                user
+                for user in users
+                if query_text in user.username.lower()
+                or query_text in user.email.lower()
+                or query_text in (user.first_name or "").lower()
+                or query_text in (user.last_name or "").lower()
+                or query_text in display_name_for_user(user).lower()
+                or query_text in (user.phone_number or "").lower()
+            ]
         return [serialize_user(user) for user in users]
+    finally:
+        session.close()
+
+
+@app.patch("/users/{user_id}")
+def update_user_profile(user_id: int, payload: ProfileUpdateInput, request: Request):
+    session = SessionLocal()
+    try:
+        enforce_rate_limit(request, "profile_update")
+        user = session.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+        user.username = payload.username.strip()
+        user.first_name = clean_name(payload.first_name)
+        user.last_name = clean_name(payload.last_name)
+        user.phone_number = clean_phone(payload.phone_number)
+        user.avatar_url = clean_avatar_url(payload.avatar_url)
+        session.commit()
+        session.refresh(user)
+        return {"user": serialize_user(user)}
+    finally:
+        session.close()
+
+
+@app.get("/users/{user_id}/contacts")
+def list_user_contacts(user_id: int):
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+        contacts = (
+            session.query(UserContact)
+            .filter(UserContact.owner_user_id == user_id)
+            .options(joinedload(UserContact.contact_user))
+            .order_by(UserContact.nickname.asc(), UserContact.created_at.desc())
+            .all()
+        )
+        return [serialize_contact(contact) for contact in contacts]
+    finally:
+        session.close()
+
+
+@app.post("/users/{user_id}/contacts")
+def create_user_contact(user_id: int, payload: ContactCreateInput, request: Request):
+    session = SessionLocal()
+    try:
+        enforce_rate_limit(request, "contact_add")
+        owner = session.query(User).filter(User.id == user_id).first()
+        contact_user = session.query(User).filter(User.id == payload.contact_user_id).first()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+        if not contact_user:
+            raise HTTPException(status_code=404, detail="Perfil a guardar no encontrado.")
+        if user_id == payload.contact_user_id:
+            raise HTTPException(status_code=400, detail="No puedes agregarte a ti mismo como conocido.")
+
+        existing_contact = (
+            session.query(UserContact)
+            .filter(
+                UserContact.owner_user_id == user_id,
+                UserContact.contact_user_id == payload.contact_user_id,
+            )
+            .first()
+        )
+
+        nickname = clean_name(payload.nickname)
+        if existing_contact:
+            existing_contact.nickname = nickname
+            session.commit()
+            session.refresh(existing_contact)
+            return {"contact": serialize_contact(existing_contact), "updated": True}
+
+        contact = UserContact(
+            owner_user_id=user_id,
+            contact_user_id=payload.contact_user_id,
+            nickname=nickname,
+        )
+        session.add(contact)
+        session.commit()
+        session.refresh(contact)
+        contact = (
+            session.query(UserContact)
+            .filter(UserContact.id == contact.id)
+            .options(joinedload(UserContact.contact_user))
+            .first()
+        )
+        return {"contact": serialize_contact(contact), "updated": False}
     finally:
         session.close()
 
@@ -527,6 +876,7 @@ def list_users():
 def list_user_groups(user_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         groups = (
             session.query(Group)
             .join(GroupMember, GroupMember.group_id == Group.id)
@@ -534,6 +884,8 @@ def list_user_groups(user_id: int):
             .options(
                 joinedload(Group.creator),
                 joinedload(Group.members).joinedload(GroupMember.user),
+                joinedload(Group.expenses).joinedload(Expense.participants),
+                joinedload(Group.settlements),
                 joinedload(Group.decisions).joinedload(GroupDecision.votes),
                 joinedload(Group.decisions).joinedload(GroupDecision.requester),
             )
@@ -549,6 +901,7 @@ def list_user_groups(user_id: int):
 def get_user_summary(user_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
@@ -613,12 +966,15 @@ def get_user_summary(user_id: int):
 
 
 @app.post("/groups")
-def create_group(payload: GroupCreateInput):
+def create_group(payload: GroupCreateInput, request: Request):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "group_create")
         creator = session.query(User).filter(User.id == payload.creator_id).first()
         if not creator:
             raise HTTPException(status_code=404, detail="Usuario creador no encontrado.")
+        if payload.ends_at and not parse_datetime_string(payload.ends_at):
+            raise HTTPException(status_code=400, detail="La fecha final del grupo no es valida.")
 
         requested_member_ids = set(payload.member_ids)
         requested_member_ids.add(payload.creator_id)
@@ -630,6 +986,8 @@ def create_group(payload: GroupCreateInput):
             name=payload.name.strip(),
             description=payload.description.strip(),
             created_by=payload.creator_id,
+            ends_at=normalize_datetime_string(payload.ends_at),
+            auto_close_action=validate_group_auto_action(payload.auto_close_action),
         )
         session.add(group)
         session.flush()
@@ -666,12 +1024,15 @@ def create_group(payload: GroupCreateInput):
 def get_group(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
             .options(
                 joinedload(Group.creator),
                 joinedload(Group.members).joinedload(GroupMember.user),
+                joinedload(Group.expenses).joinedload(Expense.participants),
+                joinedload(Group.settlements),
                 joinedload(Group.decisions).joinedload(GroupDecision.votes),
                 joinedload(Group.decisions).joinedload(GroupDecision.requester),
             )
@@ -688,6 +1049,7 @@ def get_group(group_id: int):
 def add_group_member(group_id: int, payload: MemberAddInput):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -702,6 +1064,7 @@ def add_group_member(group_id: int, payload: MemberAddInput):
         user = session.query(User).filter(User.id == payload.user_id).first()
         if not group:
             raise HTTPException(status_code=404, detail="Grupo no encontrado.")
+        ensure_group_active(group)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
         if any(member.user_id == payload.user_id for member in group.members):
@@ -737,6 +1100,7 @@ def add_group_member(group_id: int, payload: MemberAddInput):
 def list_group_expenses(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -771,9 +1135,11 @@ def list_group_expenses(group_id: int):
 
 
 @app.post("/expenses")
-def create_expense(payload: ExpenseCreateInput):
+def create_expense(payload: ExpenseCreateInput, request: Request):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "expense_create")
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == payload.group_id)
@@ -782,6 +1148,7 @@ def create_expense(payload: ExpenseCreateInput):
         )
         if not group:
             raise HTTPException(status_code=404, detail="Grupo no encontrado.")
+        ensure_group_active(group)
         if not payload.participant_ids:
             raise HTTPException(status_code=400, detail="Debes elegir al menos un participante.")
 
@@ -840,6 +1207,7 @@ def create_expense(payload: ExpenseCreateInput):
 def vote_delete_expense(expense_id: int, payload: DecisionVoteInput):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         expense = (
             session.query(Expense)
             .filter(Expense.id == expense_id)
@@ -921,6 +1289,7 @@ def vote_delete_expense(expense_id: int, payload: DecisionVoteInput):
 def vote_delete_group(group_id: int, payload: DecisionVoteInput):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -990,6 +1359,7 @@ def vote_delete_group(group_id: int, payload: DecisionVoteInput):
 def get_group_balances(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -1016,6 +1386,7 @@ def get_group_balances(group_id: int):
 def get_group_feed(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         events = (
             session.query(FeedEvent)
             .filter(FeedEvent.group_id == group_id)
@@ -1042,6 +1413,7 @@ def get_group_feed(group_id: int):
 def list_group_settlements(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         settlements = (
             session.query(Settlement)
             .filter(Settlement.group_id == group_id)
@@ -1049,6 +1421,7 @@ def list_group_settlements(group_id: int):
                 joinedload(Settlement.from_user),
                 joinedload(Settlement.to_user),
                 joinedload(Settlement.creator),
+                joinedload(Settlement.confirmer),
             )
             .order_by(Settlement.created_at.desc())
             .all()
@@ -1059,9 +1432,11 @@ def list_group_settlements(group_id: int):
 
 
 @app.post("/groups/{group_id}/settlements")
-def create_settlement(group_id: int, payload: SettlementCreateInput):
+def create_settlement(group_id: int, payload: SettlementCreateInput, request: Request):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "settlement_create")
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -1070,6 +1445,7 @@ def create_settlement(group_id: int, payload: SettlementCreateInput):
         )
         if not group:
             raise HTTPException(status_code=404, detail="Grupo no encontrado.")
+        ensure_group_active(group)
 
         validate_group_member_ids(group, [payload.actor_id, payload.from_user_id, payload.to_user_id])
         if payload.from_user_id == payload.to_user_id:
@@ -1114,10 +1490,66 @@ def create_settlement(group_id: int, payload: SettlementCreateInput):
         session.close()
 
 
+@app.post("/settlements/{settlement_id}/confirm")
+def confirm_settlement(settlement_id: int, payload: SettlementConfirmInput):
+    session = SessionLocal()
+    try:
+        sync_group_lifecycle(session)
+        settlement = (
+            session.query(Settlement)
+            .filter(Settlement.id == settlement_id)
+            .options(
+                joinedload(Settlement.group).joinedload(Group.members).joinedload(GroupMember.user),
+                joinedload(Settlement.from_user),
+                joinedload(Settlement.to_user),
+                joinedload(Settlement.creator),
+                joinedload(Settlement.confirmer),
+            )
+            .first()
+        )
+        if not settlement:
+            raise HTTPException(status_code=404, detail="Liquidacion no encontrada.")
+
+        ensure_group_member(settlement.group, payload.actor_id)
+        ensure_group_active(settlement.group)
+        if payload.actor_id != settlement.to_user_id:
+            raise HTTPException(status_code=403, detail="Solo quien recibe el pago puede confirmarlo.")
+        if settlement.received_confirmed:
+            raise HTTPException(status_code=400, detail="Esta liquidacion ya fue confirmada.")
+
+        settlement.received_confirmed = True
+        settlement.received_confirmed_at = datetime.utcnow().isoformat()
+        settlement.received_confirmed_by = payload.actor_id
+        add_feed_event(
+            session,
+            settlement.group_id,
+            payload.actor_id,
+            "settlement_confirmed",
+            f"{settlement.to_user.username} confirmo que ya recibio el pago de {settlement.from_user.username}.",
+        )
+        session.commit()
+
+        settlement = (
+            session.query(Settlement)
+            .filter(Settlement.id == settlement_id)
+            .options(
+                joinedload(Settlement.from_user),
+                joinedload(Settlement.to_user),
+                joinedload(Settlement.creator),
+                joinedload(Settlement.confirmer),
+            )
+            .first()
+        )
+        return serialize_settlement(settlement)
+    finally:
+        session.close()
+
+
 @app.get("/groups/{group_id}/proposals")
 def list_group_proposals(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -1144,9 +1576,11 @@ def list_group_proposals(group_id: int):
 
 
 @app.post("/groups/{group_id}/proposals")
-def create_group_proposal(group_id: int, payload: ProposalCreateInput):
+def create_group_proposal(group_id: int, payload: ProposalCreateInput, request: Request):
     session = SessionLocal()
     try:
+        enforce_rate_limit(request, "proposal_create")
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -1155,6 +1589,7 @@ def create_group_proposal(group_id: int, payload: ProposalCreateInput):
         )
         if not group:
             raise HTTPException(status_code=404, detail="Grupo no encontrado.")
+        ensure_group_active(group)
 
         member_ids = [payload.creator_id]
         if payload.payer_user_id:
@@ -1163,6 +1598,10 @@ def create_group_proposal(group_id: int, payload: ProposalCreateInput):
 
         total_amount_cents = amount_to_cents(payload.total_amount)
         enforce_amount_limit(total_amount_cents, "El total del servicio")
+        provider_url = validate_optional_url(payload.provider_url)
+        vote_deadline = normalize_datetime_string(payload.vote_deadline)
+        if vote_deadline and not parse_datetime_string(vote_deadline):
+            raise HTTPException(status_code=400, detail="La fecha limite de votacion no es valida.")
 
         proposal = Proposal(
             group_id=group_id,
@@ -1174,8 +1613,10 @@ def create_group_proposal(group_id: int, payload: ProposalCreateInput):
             availability_text=payload.availability_text.strip(),
             provider_name=payload.provider_name.strip(),
             provider_details=payload.provider_details.strip(),
+            provider_url=provider_url,
             payment_due_date=payload.payment_due_date.strip(),
             scheduled_for_date=payload.scheduled_for_date.strip(),
+            vote_deadline=vote_deadline,
             total_amount_cents=total_amount_cents,
             payment_method=payload.payment_method.strip(),
             confirmation_status=validate_confirmation_status(payload.confirmation_status),
@@ -1212,6 +1653,7 @@ def create_group_proposal(group_id: int, payload: ProposalCreateInput):
 def vote_proposal(proposal_id: int, payload: ProposalVoteInput):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         proposal = (
             session.query(Proposal)
             .filter(Proposal.id == proposal_id)
@@ -1226,6 +1668,10 @@ def vote_proposal(proposal_id: int, payload: ProposalVoteInput):
         if not proposal:
             raise HTTPException(status_code=404, detail="Propuesta no encontrada.")
         ensure_group_member(proposal.group, payload.user_id)
+        ensure_group_active(proposal.group)
+        vote_deadline = parse_datetime_string(proposal.vote_deadline)
+        if vote_deadline and vote_deadline < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="La votacion para esta propuesta ya cerro.")
         if any(vote.user_id == payload.user_id for vote in proposal.votes):
             raise HTTPException(status_code=400, detail="Ese usuario ya voto esta propuesta.")
 
@@ -1259,6 +1705,7 @@ def vote_proposal(proposal_id: int, payload: ProposalVoteInput):
 def select_proposal(proposal_id: int, payload: ProposalSelectInput):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         proposal = (
             session.query(Proposal)
             .filter(Proposal.id == proposal_id)
@@ -1273,6 +1720,7 @@ def select_proposal(proposal_id: int, payload: ProposalSelectInput):
         if not proposal:
             raise HTTPException(status_code=404, detail="Propuesta no encontrada.")
 
+        ensure_group_active(proposal.group)
         ensure_group_host(proposal.group, payload.user_id)
 
         group_proposals = session.query(Proposal).filter(Proposal.group_id == proposal.group_id).all()
@@ -1308,6 +1756,7 @@ def select_proposal(proposal_id: int, payload: ProposalSelectInput):
 def list_group_ratings(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -1328,6 +1777,7 @@ def list_group_ratings(group_id: int):
 def create_group_rating(group_id: int, payload: RatingCreateInput):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)
@@ -1336,6 +1786,7 @@ def create_group_rating(group_id: int, payload: RatingCreateInput):
         )
         if not group:
             raise HTTPException(status_code=404, detail="Grupo no encontrado.")
+        ensure_group_active(group)
 
         validate_group_member_ids(group, [payload.rater_id, payload.rated_user_id])
         if payload.rater_id == payload.rated_user_id:
@@ -1393,6 +1844,7 @@ def create_group_rating(group_id: int, payload: RatingCreateInput):
 def get_group_stats(group_id: int):
     session = SessionLocal()
     try:
+        sync_group_lifecycle(session)
         group = (
             session.query(Group)
             .filter(Group.id == group_id)

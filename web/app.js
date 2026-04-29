@@ -49,6 +49,7 @@ const state = {
   ratings: { leaderboard: [], ratings: [] },
   stats: null,
   settlements: [],
+  userSearchResults: [],
   activeView: localStorage.getItem("ppm-active-view") || "dashboard",
 };
 
@@ -63,6 +64,16 @@ const expenseForm = document.getElementById("expense-form");
 const manualSettlementForm = document.getElementById("manual-settlement-form");
 const proposalForm = document.getElementById("proposal-form");
 const ratingForm = document.getElementById("rating-form");
+const profileForm = document.getElementById("profile-form");
+const profileSearchInput = document.getElementById("profile-search-input");
+const currentUserAvatar = document.getElementById("current-user-avatar");
+const currentUserAvatarFallback = document.getElementById("current-user-avatar-fallback");
+const currentUserPhone = document.getElementById("current-user-phone");
+const profileAvatarPreview = document.getElementById("profile-avatar-preview");
+const profileAvatarFallback = document.getElementById("profile-avatar-fallback");
+const profileDisplayName = document.getElementById("profile-display-name");
+const profileDisplayEmail = document.getElementById("profile-display-email");
+const profileDisplayPhone = document.getElementById("profile-display-phone");
 
 document.getElementById("show-login").addEventListener("click", () => toggleAuthMode("login"));
 document.getElementById("show-register").addEventListener("click", () => toggleAuthMode("register"));
@@ -80,6 +91,9 @@ expenseForm.addEventListener("submit", handleCreateExpense);
 manualSettlementForm.addEventListener("submit", handleCreateSettlement);
 proposalForm.addEventListener("submit", handleCreateProposal);
 ratingForm.addEventListener("submit", handleCreateRating);
+profileForm?.addEventListener("submit", handleUpdateProfile);
+profileForm?.addEventListener("input", syncProfilePreviewFromForm);
+profileSearchInput?.addEventListener("input", renderUserSearchResults);
 
 document.querySelectorAll(".nav-btn").forEach((button) => {
   button.addEventListener("click", () => setActiveView(button.dataset.view));
@@ -90,6 +104,7 @@ document.querySelectorAll(".quick-action-btn, .shortcut-card").forEach((button) 
 });
 
 toggleAuthMode("login");
+resetAuthTimers();
 renderApp();
 if (state.currentUser) {
   bootstrapApp();
@@ -107,6 +122,12 @@ function loadJson(key) {
 function loadNumber(key) {
   const raw = localStorage.getItem(key);
   return raw ? Number(raw) : null;
+}
+
+function resetAuthTimers() {
+  const startedAt = Date.now() / 1000;
+  loginForm.dataset.startedAt = String(startedAt);
+  registerForm.dataset.startedAt = String(startedAt);
 }
 
 function persistState() {
@@ -158,6 +179,7 @@ function toggleAuthMode(mode) {
   registerForm.classList.toggle("hidden", loginActive);
   document.getElementById("show-login").classList.toggle("active", loginActive);
   document.getElementById("show-register").classList.toggle("active", !loginActive);
+  resetAuthTimers();
 }
 
 function setActiveView(view) {
@@ -175,6 +197,8 @@ async function handleLogin(event) {
       body: JSON.stringify({
         email: formData.get("email"),
         password: formData.get("password"),
+        website: formData.get("website") || "",
+        form_started_at: Number(loginForm.dataset.startedAt || 0),
       }),
     });
     state.currentUser = result.user;
@@ -195,8 +219,14 @@ async function handleRegister(event) {
       method: "POST",
       body: JSON.stringify({
         username: formData.get("username"),
+        first_name: formData.get("firstName"),
+        last_name: formData.get("lastName"),
         email: formData.get("email"),
+        phone_number: formData.get("phoneNumber"),
+        avatar_url: formData.get("avatarUrl"),
         password: formData.get("password"),
+        website: formData.get("website") || "",
+        form_started_at: Number(registerForm.dataset.startedAt || 0),
       }),
     });
     state.currentUser = result.user;
@@ -223,6 +253,7 @@ function logout() {
   state.ratings = { leaderboard: [], ratings: [] };
   state.stats = null;
   state.settlements = [];
+  state.userSearchResults = [];
   persistState();
   renderApp();
 }
@@ -243,6 +274,7 @@ async function bootstrapApp() {
     state.users = users;
     state.groups = groups;
     state.summary = summary;
+    state.userSearchResults = users.filter((user) => user.id !== state.currentUser.id).slice(0, 8);
 
     if (!state.groups.length) {
       state.activeGroupId = null;
@@ -266,6 +298,7 @@ async function bootstrapApp() {
     persistState();
     await loadActiveGroupData();
     renderApp();
+    showAutomaticReminders();
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -320,6 +353,8 @@ async function handleCreateGroup(event) {
         description: formData.get("description"),
         creator_id: state.currentUser.id,
         member_ids: invitedIds,
+        ends_at: formData.get("endsAt"),
+        auto_close_action: formData.get("autoCloseAction"),
       }),
     });
     state.activeGroupId = group.id;
@@ -446,9 +481,11 @@ async function handleCreateProposal(event) {
         availability_text: formData.get("availabilityText"),
         provider_name: formData.get("providerName"),
         provider_details: formData.get("providerDetails"),
+        provider_url: formData.get("providerUrl"),
         payer_user_id: payerValue ? Number(payerValue) : null,
         payment_due_date: formData.get("paymentDueDate"),
         scheduled_for_date: formData.get("scheduledForDate"),
+        vote_deadline: formData.get("voteDeadline"),
         total_amount: Number(formData.get("totalAmount")),
         payment_method: formData.get("paymentMethod"),
         confirmation_status: formData.get("confirmationStatus"),
@@ -515,6 +552,42 @@ async function handleCreateRating(event) {
   }
 }
 
+async function handleConfirmSettlement(settlementId) {
+  try {
+    await api(`/settlements/${settlementId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ actor_id: state.currentUser.id }),
+    });
+    showToast("Pago confirmado como recibido.", "success");
+    await bootstrapApp();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function handleUpdateProfile(event) {
+  event.preventDefault();
+  const formData = new FormData(profileForm);
+  try {
+    const result = await api(`/users/${state.currentUser.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        username: formData.get("username"),
+        first_name: formData.get("firstName"),
+        last_name: formData.get("lastName"),
+        phone_number: formData.get("phoneNumber"),
+        avatar_url: formData.get("avatarUrl"),
+      }),
+    });
+    state.currentUser = result.user;
+    persistState();
+    showToast("Perfil actualizado.", "success");
+    await bootstrapApp();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
 async function handleGroupDeleteVote() {
   if (!state.activeGroup) {
     return;
@@ -545,8 +618,22 @@ function renderApp() {
     return;
   }
 
-  document.getElementById("current-user-name").textContent = state.currentUser.username;
+  document.getElementById("current-user-name").textContent = userLabel(state.currentUser);
   document.getElementById("current-user-email").textContent = state.currentUser.email;
+  currentUserPhone.textContent = state.currentUser.phone_number ? `Tel: ${state.currentUser.phone_number}` : "Sin telefono guardado";
+  profileDisplayName.textContent = userLabel(state.currentUser);
+  profileDisplayEmail.textContent = state.currentUser.email;
+  profileDisplayPhone.textContent = state.currentUser.phone_number || "Agrega tu telefono para identificarte mejor.";
+  syncAvatar(currentUserAvatar, currentUserAvatarFallback, state.currentUser.avatar_url, initials(state.currentUser));
+  syncAvatar(profileAvatarPreview, profileAvatarFallback, state.currentUser.avatar_url, initials(state.currentUser));
+  if (profileForm) {
+    profileForm.elements.username.value = state.currentUser.username || "";
+    profileForm.elements.firstName.value = state.currentUser.first_name || "";
+    profileForm.elements.lastName.value = state.currentUser.last_name || "";
+    profileForm.elements.phoneNumber.value = state.currentUser.phone_number || "";
+    profileForm.elements.avatarUrl.value = state.currentUser.avatar_url || "";
+    syncProfilePreviewFromForm();
+  }
 
   renderHero();
   renderNav();
@@ -564,6 +651,7 @@ function renderApp() {
   renderStats();
   renderProposals();
   renderRatings();
+  renderUserSearchResults();
   renderSelectedProposal();
   renderViewVisibility();
 }
@@ -585,12 +673,12 @@ function renderMetrics() {
     total_expenses: 0,
     total_paid: 0,
     net_balance: 0,
-    proposal_count: 0,
+    group_count: 0,
   };
   document.getElementById("metric-total-expenses").textContent = money(summary.total_expenses);
   document.getElementById("metric-total-paid").textContent = money(summary.total_paid);
   document.getElementById("metric-net-balance").textContent = money(summary.net_balance);
-  document.getElementById("metric-proposal-count").textContent = String(summary.proposal_count || 0);
+  document.getElementById("metric-proposal-count").textContent = String(summary.group_count || 0);
 }
 
 function renderJourney() {
@@ -701,10 +789,17 @@ function renderGroups() {
   state.groups.forEach((group) => {
     const item = document.createElement("article");
     item.className = `group-item ${group.id === state.activeGroupId ? "active" : ""}`;
+    const paymentText =
+      group.payment_status === "pagado"
+        ? `${group.settled_member_count} al dia`
+        : group.payment_status === "pendientes"
+          ? `${group.pending_member_count} pendientes`
+          : "Sin movimientos";
     item.innerHTML = `
       <button type="button">
         <strong>${escapeHtml(group.name)}</strong>
         <div class="muted small">${escapeHtml(group.description || "Sin descripcion")}</div>
+        <div class="muted small">${escapeHtml(group.status === "suspended" ? "Suspendido" : "Activo")} | ${escapeHtml(paymentText)}</div>
       </button>
     `;
     item.querySelector("button").addEventListener("click", async () => {
@@ -742,7 +837,9 @@ function renderGroupCore() {
 
   activeName.textContent = state.activeGroup.name;
   activeDescription.textContent = state.activeGroup.description || "Este grupo aun no tiene descripcion.";
-  hostLine.textContent = `Anfitrion: ${state.activeGroup.host.username}`;
+  hostLine.textContent = `Anfitrion: ${state.activeGroup.host.username} | Estado: ${
+    state.activeGroup.status === "suspended" ? "Suspendido" : "Activo"
+  }${state.activeGroup.ends_at ? ` | Cierra: ${state.activeGroup.ends_at}` : ""}`;
 
   state.activeGroup.members.forEach((member) => {
     const chip = document.createElement("div");
@@ -912,7 +1009,16 @@ function renderBalances() {
     row.innerHTML = `
       <strong>${escapeHtml(settlement.from_user.username)} pago a ${escapeHtml(settlement.to_user.username)}</strong>
       <span class="muted small">${money(settlement.amount)} | ${escapeHtml(settlement.notes || "Sin notas")}</span>
+      <span class="muted small">${settlement.received_confirmed ? "Pago recibido confirmado" : "Pendiente por confirmar"}</span>
     `;
+    if (!settlement.received_confirmed && settlement.to_user.id === state.currentUser.id) {
+      const button = document.createElement("button");
+      button.className = "ghost-btn mini-btn";
+      button.type = "button";
+      button.textContent = "Confirmar que ya llego";
+      button.addEventListener("click", () => handleConfirmSettlement(settlement.id));
+      row.appendChild(button);
+    }
     historyEl.appendChild(row);
   });
 }
@@ -989,7 +1095,7 @@ function renderInviteOptions() {
     .forEach((user) => {
       const option = document.createElement("option");
       option.value = String(user.id);
-      option.textContent = `${user.username} (${user.email})`;
+      option.textContent = `${user.display_name || user.username} (${user.email})`;
       inviteSelect.appendChild(option);
     });
 }
@@ -1009,6 +1115,11 @@ function renderSelectedProposal() {
       <strong>${escapeHtml(selectedProposal.title)}</strong>
       <span class="muted small">${escapeHtml(selectedProposal.activity_type)} | ${money(selectedProposal.total_amount)}</span>
       <span class="muted small">Proveedor: ${escapeHtml(selectedProposal.provider_name || "Sin proveedor")}</span>
+      ${
+        selectedProposal.provider_url
+          ? `<a class="muted small" href="${escapeHtml(selectedProposal.provider_url)}" target="_blank" rel="noopener noreferrer">Abrir sitio del proveedor</a>`
+          : ""
+      }
       <span class="muted small">Confirmacion: ${escapeHtml(selectedProposal.confirmation_status)}</span>
     </div>
   `;
@@ -1032,6 +1143,7 @@ function renderStats() {
     item.className = "table-row";
     item.innerHTML = `
       <strong>${escapeHtml(row.user.username)}</strong>
+      <span class="star-row">${stars(row.average_score)}</span>
       <span class="muted small">${row.badge_title} | ${row.average_score}/5 con ${row.rating_count} calificaciones</span>
     `;
     topRated.appendChild(item);
@@ -1085,9 +1197,15 @@ function renderProposals() {
       <div class="proposal-meta">
         <span class="muted small">Disponibilidad: ${escapeHtml(proposal.availability_text || "Sin definir")}</span>
         <span class="muted small">Proveedor: ${escapeHtml(proposal.provider_name || "Sin proveedor")}</span>
+        ${
+          proposal.provider_url
+            ? `<a class="muted small" href="${escapeHtml(proposal.provider_url)}" target="_blank" rel="noopener noreferrer">Ver sitio</a>`
+            : '<span class="muted small">Sin URL del proveedor</span>'
+        }
         <span class="muted small">A pagar por: ${escapeHtml(payerText)}</span>
         <span class="muted small">Antes de: ${escapeHtml(proposal.payment_due_date || "Sin fecha")}</span>
         <span class="muted small">Para fecha: ${escapeHtml(proposal.scheduled_for_date || "Sin fecha")}</span>
+        <span class="muted small">Vota antes de: ${escapeHtml(proposal.vote_deadline || "Sin limite")}</span>
         <span class="muted small">Metodo: ${escapeHtml(proposal.payment_method || "Sin definir")}</span>
         <span class="muted small">Confirmacion: ${escapeHtml(proposal.confirmation_status)}</span>
         <span class="muted small">Total: ${money(proposal.total_amount)}</span>
@@ -1101,9 +1219,19 @@ function renderProposals() {
     voteButton.type = "button";
     voteButton.className = "ghost-btn mini-btn";
     voteButton.textContent = votedByMe ? "Ya votaste" : "Votar";
-    voteButton.disabled = votedByMe;
+    voteButton.disabled = votedByMe || isVoteClosed(proposal.vote_deadline);
     voteButton.addEventListener("click", () => handleVoteProposal(proposal.id));
     actions.appendChild(voteButton);
+
+    if (proposal.scheduled_for_date) {
+      const calendarLink = document.createElement("a");
+      calendarLink.className = "ghost-btn mini-btn";
+      calendarLink.href = buildCalendarUrl(proposal);
+      calendarLink.target = "_blank";
+      calendarLink.rel = "noopener noreferrer";
+      calendarLink.textContent = "Agregar al calendario";
+      actions.appendChild(calendarLink);
+    }
 
     if (state.activeGroup && state.activeGroup.host.id === state.currentUser.id) {
       const selectButton = document.createElement("button");
@@ -1134,6 +1262,7 @@ function renderRatings() {
       row.className = "table-row";
       row.innerHTML = `
         <strong>${escapeHtml(entry.user.username)}</strong>
+        <span class="star-row">${stars(entry.average_score)}</span>
         <span class="muted small">${escapeHtml(entry.badge_title)} | ${entry.average_score}/5 con ${entry.rating_count} votos</span>
         <span class="muted small">${escapeHtml((entry.custom_titles || []).join(", ") || "Sin titulos custom")}</span>
       `;
@@ -1149,6 +1278,7 @@ function renderRatings() {
       row.className = "table-row";
       row.innerHTML = `
         <strong>${escapeHtml(rating.rated_user.username)} recibio '${escapeHtml(rating.title)}'</strong>
+        <span class="star-row">${stars(rating.score)}</span>
         <span class="muted small">${escapeHtml(rating.rater.username)} dio ${rating.score}/5 | ${escapeHtml(
           rating.comment || "Sin comentario"
         )}</span>
@@ -1156,6 +1286,51 @@ function renderRatings() {
       history.appendChild(row);
     });
   }
+}
+
+function renderUserSearchResults() {
+  const wrap = document.getElementById("profile-search-results");
+  if (!wrap) {
+    return;
+  }
+
+  const query = String(profileSearchInput?.value || "").trim().toLowerCase();
+  const results = state.users.filter((user) => {
+    if (user.id === state.currentUser.id) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const haystack = [
+      user.username,
+      user.display_name,
+      user.first_name,
+      user.last_name,
+      user.email,
+      user.phone_number,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+
+  wrap.innerHTML = "";
+  if (!results.length) {
+    wrap.innerHTML = '<div class="table-row muted small">No encontramos usuarios con esa busqueda.</div>';
+    return;
+  }
+
+  results.slice(0, 12).forEach((user) => {
+    const row = document.createElement("div");
+    row.className = "table-row";
+    row.innerHTML = `
+      <strong>${escapeHtml(user.display_name || user.username)}</strong>
+      <span class="muted small">@${escapeHtml(user.username)} | ${escapeHtml(user.phone_number || user.email)}</span>
+    `;
+    wrap.appendChild(row);
+  });
 }
 
 function renderViewVisibility() {
@@ -1175,14 +1350,120 @@ function money(amount) {
   }).format(amount || 0);
 }
 
+function userLabel(user) {
+  return user.display_name || user.full_name || user.username;
+}
+
+function initials(user) {
+  const source = userLabel(user).trim();
+  if (!source) {
+    return "P";
+  }
+  const parts = source.split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "P";
+}
+
+function syncAvatar(imageEl, fallbackEl, url, fallbackText) {
+  if (!imageEl || !fallbackEl) {
+    return;
+  }
+  const hasUrl = Boolean(String(url || "").trim());
+  fallbackEl.textContent = fallbackText;
+  imageEl.classList.toggle("hidden", !hasUrl);
+  fallbackEl.classList.toggle("hidden", hasUrl);
+  if (hasUrl) {
+    imageEl.src = String(url).trim();
+  } else {
+    imageEl.removeAttribute("src");
+  }
+}
+
+function syncProfilePreviewFromForm() {
+  if (!profileForm) {
+    return;
+  }
+  const username = String(profileForm.elements.username.value || "").trim();
+  const firstName = String(profileForm.elements.firstName.value || "").trim();
+  const lastName = String(profileForm.elements.lastName.value || "").trim();
+  const phone = String(profileForm.elements.phoneNumber.value || "").trim();
+  const avatarUrl = String(profileForm.elements.avatarUrl.value || "").trim();
+  const previewUser = {
+    username: username || state.currentUser?.username || "perfil",
+    display_name: [firstName, lastName].filter(Boolean).join(" ") || username || state.currentUser?.display_name || "",
+    avatar_url: avatarUrl,
+  };
+  profileDisplayName.textContent = userLabel(previewUser);
+  profileDisplayEmail.textContent = state.currentUser?.email || "";
+  profileDisplayPhone.textContent = phone || "Agrega tu telefono para identificarte mejor.";
+  syncAvatar(profileAvatarPreview, profileAvatarFallback, avatarUrl, initials(previewUser));
+}
+
 function formatDate(value) {
-  return new Date(value).toLocaleString("es-MX", {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Fecha no disponible";
+  }
+  return date.toLocaleString("es-MX", {
     year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function stars(score) {
+  const rounded = Math.max(1, Math.min(5, Math.round(Number(score) || 0)));
+  return "★".repeat(rounded) + "☆".repeat(5 - rounded);
+}
+
+function isVoteClosed(value) {
+  if (!value) {
+    return false;
+  }
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date < new Date();
+}
+
+function buildCalendarUrl(proposal) {
+  const date = new Date(proposal.scheduled_for_date);
+  const end = new Date(date);
+  end.setHours(end.getHours() + 2);
+  const startStamp = date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const endStamp = end.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: proposal.title,
+    details: `${proposal.details || ""}\n${proposal.provider_url || ""}`.trim(),
+    dates: `${startStamp}/${endStamp}`,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function showAutomaticReminders() {
+  if (!state.activeGroup) {
+    return;
+  }
+
+  const closingProposal = state.proposals.find((proposal) => {
+    if (!proposal.vote_deadline || proposal.voters.some((user) => user.id === state.currentUser.id)) {
+      return false;
+    }
+    const deadline = new Date(proposal.vote_deadline);
+    const now = new Date();
+    return !Number.isNaN(deadline.getTime()) && deadline > now && deadline.getTime() - now.getTime() < 24 * 60 * 60 * 1000;
+  });
+
+  if (closingProposal) {
+    showToast(`Recuerdo: la votacion de '${closingProposal.title}' cierra pronto.`, "success");
+  }
+
+  if (state.balances?.settlements?.length) {
+    const due = state.balances.settlements.find((item) => item.from_user.id === state.currentUser.id);
+    if (due) {
+      showToast(`Recuerdo: tienes un pago pendiente hacia ${due.to_user.username}.`, "success");
+    }
+  }
 }
 
 function showToast(message, type) {

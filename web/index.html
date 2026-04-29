@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PPM Social</title>
-    <link rel="stylesheet" href="/app/styles.css" />
+    <link rel="stylesheet" href="/app/styles.css?v=brickguard2" />
   </head>
   <body>
     <div id="toast" class="toast hidden"></div>
@@ -25,30 +25,49 @@
           </div>
 
           <form id="login-form" class="stack">
+            <input class="bot-trap" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
             <label>
               <span>Correo</span>
-              <input name="email" type="email" required />
+              <input name="email" type="email" autocomplete="email" required />
             </label>
             <label>
               <span>Contrasena</span>
-              <input name="password" type="password" required />
+              <input name="password" type="password" autocomplete="current-password" required />
             </label>
             <button class="primary-btn" type="submit">Iniciar sesion</button>
           </form>
 
           <form id="register-form" class="stack hidden">
             <label>
+              <span>Usuario</span>
+              <input name="username" type="text" minlength="2" maxlength="120" autocomplete="username" required />
+            </label>
+            <input class="bot-trap" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
+            <label>
               <span>Nombre</span>
-              <input name="username" type="text" minlength="2" required />
+              <input name="firstName" type="text" maxlength="120" autocomplete="given-name" />
+            </label>
+            <label>
+              <span>Apellido</span>
+              <input name="lastName" type="text" maxlength="120" autocomplete="family-name" />
             </label>
             <label>
               <span>Correo</span>
-              <input name="email" type="email" required />
+              <input name="email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              <span>Telefono</span>
+              <input name="phoneNumber" type="tel" inputmode="tel" maxlength="40" autocomplete="tel" placeholder="+52 55 1234 5678" />
+            </label>
+            <label>
+              <span>Foto de perfil por URL</span>
+              <input name="avatarUrl" type="url" maxlength="500" placeholder="https://..." />
             </label>
             <label>
               <span>Contrasena</span>
-              <input name="password" type="password" minlength="6" required />
+              <input name="password" type="password" minlength="8" autocomplete="new-password" required />
             </label>
+            <p class="small muted profile-helper">Usa al menos 8 caracteres con letras y numeros para que la cuenta quede mas segura.</p>
             <button class="primary-btn" type="submit">Crear cuenta</button>
           </form>
         </div>
@@ -64,8 +83,17 @@
         </div>
 
         <div class="user-block">
-          <strong id="current-user-name"></strong>
-          <span id="current-user-email" class="muted small"></span>
+          <div class="user-profile-row">
+            <div class="avatar-shell">
+              <img id="current-user-avatar" class="avatar-image hidden" alt="Foto de perfil actual" />
+              <span id="current-user-avatar-fallback" class="avatar-fallback">P</span>
+            </div>
+            <div class="user-meta">
+              <strong id="current-user-name"></strong>
+              <span id="current-user-email" class="muted small"></span>
+              <span id="current-user-phone" class="muted small"></span>
+            </div>
+          </div>
           <button id="logout-btn" class="ghost-btn" type="button">Cerrar sesion</button>
         </div>
 
@@ -127,6 +155,18 @@
           <form id="group-form" class="stack compact">
             <input name="name" type="text" placeholder="Nombre del grupo" required />
             <textarea name="description" rows="3" placeholder="Descripcion del grupo"></textarea>
+            <label>
+              <span>Fecha final del grupo</span>
+              <input name="endsAt" type="datetime-local" />
+            </label>
+            <label>
+              <span>Al terminar la fecha</span>
+              <select name="autoCloseAction">
+                <option value="none">No hacer nada</option>
+                <option value="suspend">Suspender grupo</option>
+                <option value="delete">Eliminar grupo</option>
+              </select>
+            </label>
             <label class="small muted" for="group-invite-list">Invitar usuarios</label>
             <select id="group-invite-list" name="memberIds" multiple></select>
             <button class="primary-btn" type="submit">Crear grupo</button>
@@ -409,9 +449,11 @@
                 <textarea name="availabilityText" rows="2" placeholder="Disponibilidad"></textarea>
                 <input name="providerName" type="text" placeholder="Proveedor" />
                 <textarea name="providerDetails" rows="2" placeholder="Datos del proveedor"></textarea>
+                <input name="providerUrl" type="url" placeholder="URL del sitio o actividad" />
                 <select id="proposal-payer-user" name="payerUserId"></select>
                 <input name="paymentDueDate" type="date" />
                 <input name="scheduledForDate" type="date" />
+                <input name="voteDeadline" type="datetime-local" />
                 <input name="totalAmount" type="number" step="0.01" min="0.01" max="1000000" placeholder="Total del servicio" required />
                 <input name="paymentMethod" type="text" placeholder="Metodo de pago" />
                 <select name="confirmationStatus">
@@ -437,6 +479,44 @@
         </section>
 
         <section id="view-community" class="view-section hidden">
+          <div class="content-grid">
+            <section class="panel">
+              <div class="section-head">
+                <h2>Mi perfil</h2>
+              </div>
+              <div class="profile-preview-card">
+                <div class="avatar-shell avatar-large">
+                  <img id="profile-avatar-preview" class="avatar-image hidden" alt="Vista previa de tu foto de perfil" />
+                  <span id="profile-avatar-fallback" class="avatar-fallback">P</span>
+                </div>
+                <div class="profile-preview-meta">
+                  <strong id="profile-display-name">Tu perfil</strong>
+                  <span id="profile-display-email" class="muted small"></span>
+                  <span id="profile-display-phone" class="muted small">Agrega tu telefono para identificarte mejor.</span>
+                </div>
+              </div>
+              <form id="profile-form" class="stack compact">
+                <input name="username" type="text" placeholder="Usuario" required />
+                <div class="split-fields">
+                  <input name="firstName" type="text" maxlength="120" autocomplete="given-name" placeholder="Nombre" />
+                  <input name="lastName" type="text" maxlength="120" autocomplete="family-name" placeholder="Apellido" />
+                </div>
+                <input name="phoneNumber" type="tel" inputmode="tel" maxlength="40" autocomplete="tel" placeholder="Telefono" />
+                <input name="avatarUrl" type="url" maxlength="500" placeholder="URL de foto" />
+                <p class="small muted profile-helper">Acepta enlaces `http://` o `https://` para evitar fotos o links inseguros.</p>
+                <button class="primary-btn" type="submit">Guardar perfil</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="section-head">
+                <h2>Buscar usuarios</h2>
+              </div>
+              <input id="profile-search-input" type="search" placeholder="Busca por usuario, nombre, apellido o telefono" />
+              <div id="profile-search-results" class="table-list"></div>
+            </section>
+          </div>
+
           <div class="content-grid">
             <section class="panel">
               <div class="section-head">
