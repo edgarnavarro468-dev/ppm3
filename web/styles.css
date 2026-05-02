@@ -43,6 +43,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 label,
 input,
 select,
@@ -410,6 +415,52 @@ label span {
   align-items: start;
 }
 
+.group-action-strip,
+.group-primary-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.group-action-strip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+
+.group-primary-actions {
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+}
+
+.group-summary-card {
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(33, 69, 91, 0.08), rgba(185, 92, 69, 0.08));
+}
+
+.group-summary-card.positive {
+  background: linear-gradient(135deg, rgba(31, 122, 77, 0.12), rgba(255, 252, 248, 0.96));
+  border-color: rgba(31, 122, 77, 0.26);
+}
+
+.group-summary-card.negative {
+  background: linear-gradient(135deg, rgba(182, 63, 46, 0.12), rgba(255, 252, 248, 0.96));
+  border-color: rgba(182, 63, 46, 0.26);
+}
+
+.group-summary-card.action {
+  background: linear-gradient(135deg, rgba(33, 69, 91, 0.14), rgba(185, 92, 69, 0.12));
+  border-color: rgba(33, 69, 91, 0.24);
+}
+
+.group-summary-card strong,
+.group-summary-card span {
+  display: block;
+}
+
+.group-summary-card span {
+  margin-top: 6px;
+}
+
 .balance-hero {
   min-width: 190px;
   padding: 18px;
@@ -442,6 +493,21 @@ label span {
 .settlement-row,
 .info-card {
   padding: 14px 16px;
+}
+
+.empty-state-card {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed rgba(33, 69, 91, 0.25);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(33, 69, 91, 0.05), rgba(185, 92, 69, 0.08));
+}
+
+.empty-state-card .primary-btn {
+  min-width: 220px;
 }
 
 .feed-item {
@@ -632,6 +698,7 @@ label span {
   .expense-layout,
   .account-layout,
   .group-detail-head,
+  .group-action-strip,
   .section-header {
     grid-template-columns: 1fr;
   }
@@ -658,6 +725,7 @@ label span {
   }
 
   .split-fields,
+  .group-primary-actions,
   .subtab-row,
   .bottom-tabs {
     grid-template-columns: 1fr;

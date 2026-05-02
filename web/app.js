@@ -43,6 +43,8 @@ const expensePayerSelect = document.getElementById("expense-payer");
 const participantList = document.getElementById("participant-list");
 const addExpenseFab = document.getElementById("add-expense-fab");
 const groupCreatorSheet = document.getElementById("group-creator-sheet");
+const groupAddExpenseBtn = document.getElementById("group-add-expense-btn");
+const groupViewBalancesBtn = document.getElementById("group-view-balances-btn");
 
 document.getElementById("show-login").addEventListener("click", () => toggleAuthMode("login"));
 document.getElementById("show-register").addEventListener("click", () => toggleAuthMode("register"));
@@ -51,10 +53,9 @@ document.getElementById("open-group-creator-btn").addEventListener("click", open
 document.getElementById("close-group-creator-btn").addEventListener("click", closeGroupCreator);
 document.getElementById("logout-btn").addEventListener("click", logout);
 document.getElementById("toggle-participants-btn").addEventListener("click", toggleParticipantsEditor);
-addExpenseFab.addEventListener("click", () => {
-  setActiveView("expenses");
-  focusExpenseAmount();
-});
+addExpenseFab.addEventListener("click", () => openExpenseComposer());
+groupAddExpenseBtn.addEventListener("click", () => openExpenseComposer());
+groupViewBalancesBtn.addEventListener("click", openBalancesView);
 
 loginForm.addEventListener("submit", handleLogin);
 registerForm.addEventListener("submit", handleRegister);
@@ -193,6 +194,19 @@ function closeGroupCreator() {
 function toggleParticipantsEditor() {
   state.participantEditorOpen = !state.participantEditorOpen;
   renderExpenseForm();
+}
+
+async function openExpenseComposer(groupId = state.activeGroupId) {
+  if (groupId && groupId !== state.activeGroupId) {
+    await setActiveGroup(groupId);
+  }
+  setActiveView("expenses");
+  focusExpenseAmount();
+}
+
+function openBalancesView() {
+  setActiveView("groups");
+  setGroupDetailTab("balances");
 }
 
 async function handleLogin(event) {
@@ -440,13 +454,20 @@ async function handleCreateSettlement(event) {
 }
 
 async function handleQuickSettlement(settlement) {
+  const fromUserId = userId(settlement?.from_user);
+  const toUserId = userId(settlement?.to_user);
+  if (!fromUserId || !toUserId) {
+    showToast("No se pudo identificar a los usuarios de esta liquidacion.", "error");
+    return;
+  }
+
   try {
     await api(`/groups/${state.activeGroupId}/settlements`, {
       method: "POST",
       body: JSON.stringify({
         actor_id: state.currentUser.id,
-        from_user_id: settlement.from_user.id,
-        to_user_id: settlement.to_user.id,
+        from_user_id: fromUserId,
+        to_user_id: toUserId,
         amount: settlement.amount,
         notes: "Liquidacion marcada desde saldos",
       }),
@@ -582,6 +603,9 @@ function renderGroupDetail() {
   const nameEl = document.getElementById("active-group-name");
   const descriptionEl = document.getElementById("active-group-description");
   const balanceEl = document.getElementById("active-group-balance");
+  const summaryEl = document.getElementById("active-group-summary");
+  const summaryTitleEl = document.getElementById("active-group-summary-title");
+  const summaryCaptionEl = document.getElementById("active-group-summary-caption");
   const membersEl = document.getElementById("active-group-members");
   const expenseFeedEl = document.getElementById("group-expense-feed");
 
@@ -589,6 +613,11 @@ function renderGroupDetail() {
     nameEl.textContent = "Sin grupo";
     descriptionEl.textContent = "Crea un grupo o toca uno de la lista para empezar.";
     balanceEl.textContent = "Sin saldo";
+    summaryEl.className = "group-summary-card neutral";
+    summaryTitleEl.textContent = "Sin grupo activo";
+    summaryCaptionEl.textContent = "Elige un grupo para ver saldos y agregar gastos sin rodeos.";
+    groupAddExpenseBtn.disabled = true;
+    groupViewBalancesBtn.disabled = true;
     membersEl.innerHTML = "";
     expenseFeedEl.innerHTML = '<div class="feed-item"><strong>Sin grupo activo</strong><span class="muted small">Cuando elijas un grupo, aqui veras sus gastos y saldos.</span></div>';
     document.getElementById("balances-list").innerHTML = "";
@@ -602,19 +631,40 @@ function renderGroupDetail() {
   nameEl.textContent = state.activeGroup.name;
   descriptionEl.textContent = state.activeGroup.description || "Sin descripcion.";
   balanceEl.textContent = balanceText(activeCard?.my_net_balance || 0);
+  const summary = getGroupSummary(activeCard);
+  summaryEl.className = `group-summary-card ${summary.tone}`;
+  summaryTitleEl.textContent = summary.title;
+  summaryCaptionEl.textContent = summary.caption;
+  groupAddExpenseBtn.disabled = false;
+  groupViewBalancesBtn.disabled = false;
 
   membersEl.innerHTML = "";
   state.activeGroup.members.forEach((member) => {
+    const user = memberUser(member);
     const chip = document.createElement("div");
     chip.className = "member-chip";
     chip.innerHTML = `
-      <strong>${escapeHtml(userLabel(member.user))}</strong>
-      <span class="muted small">@${escapeHtml(member.user.username)}</span>
+      <strong>${escapeHtml(userLabel(user))}</strong>
+      <span class="muted small">@${escapeHtml(user?.username || "sin-usuario")}</span>
     `;
     membersEl.appendChild(chip);
   });
 
   expenseFeedEl.innerHTML = "";
+  if (!state.expenses.length) {
+    expenseFeedEl.innerHTML = `
+      <div class="empty-state-card">
+        <p class="eyebrow">Primer paso</p>
+        <strong>Aun no hay gastos. Agrega uno para empezar a dividir.</strong>
+        <span class="muted">1. Agrega un gasto  2. Se divide automaticamente  3. Revisa quien debe a quien</span>
+        <button id="empty-group-add-expense-btn" class="primary-btn" type="button">Agregar primer gasto</button>
+      </div>
+    `;
+    document.getElementById("empty-group-add-expense-btn")?.addEventListener("click", () => openExpenseComposer(state.activeGroupId));
+    renderBalancesSection();
+    renderGroupDetailTabs();
+    return;
+  }
   if (!state.expenses.length) {
     expenseFeedEl.innerHTML = '<div class="feed-item"><strong>Sin gastos todavia</strong><span class="muted small">Toca “Agregar gasto” y registra el primero.</span></div>';
   } else {
@@ -679,7 +729,7 @@ function renderBalancesSection() {
         <strong>${escapeHtml(userLabel(settlement.from_user))} debe pagar a ${escapeHtml(userLabel(settlement.to_user))}</strong>
         <span>${money(settlement.amount)}</span>
       `;
-      if (settlement.from_user.id === state.currentUser.id) {
+      if (userId(settlement.from_user) === state.currentUser.id) {
         const button = document.createElement("button");
         button.className = "primary-btn mini-btn";
         button.type = "button";
@@ -704,7 +754,7 @@ function renderBalancesSection() {
       <span>${money(settlement.amount)} · ${escapeHtml(settlement.notes || "Sin notas")}</span>
       <span class="muted small">${settlement.received_confirmed ? "Pago recibido confirmado" : "Pendiente por confirmar"}</span>
     `;
-    if (!settlement.received_confirmed && settlement.to_user.id === state.currentUser.id) {
+    if (!settlement.received_confirmed && userId(settlement.to_user) === state.currentUser.id) {
       const button = document.createElement("button");
       button.className = "ghost-btn mini-btn";
       button.type = "button";
@@ -729,18 +779,19 @@ function renderSettlementFormOptions() {
   }
 
   state.activeGroup.members.forEach((member) => {
-    const label = userLabel(member.user);
+    const user = memberUser(member);
+    const label = userLabel(user);
     const fromOption = document.createElement("option");
-    fromOption.value = String(member.user.id);
+    fromOption.value = String(user?.id || "");
     fromOption.textContent = label;
-    if (member.user.id === state.currentUser.id) {
+    if (user?.id === state.currentUser.id) {
       fromOption.selected = true;
     }
 
     const toOption = document.createElement("option");
-    toOption.value = String(member.user.id);
+    toOption.value = String(user?.id || "");
     toOption.textContent = label;
-    if (member.user.id !== state.currentUser.id && !toSelect.childElementCount) {
+    if (user?.id !== state.currentUser.id && !toSelect.childElementCount) {
       toOption.selected = true;
     }
 
@@ -772,16 +823,17 @@ function renderExpenseForm() {
 
   const members = state.activeGroup?.members || [];
   members.forEach((member) => {
+    const user = memberUser(member);
     const option = document.createElement("option");
-    option.value = String(member.user.id);
-    option.textContent = userLabel(member.user);
-    option.selected = member.user.id === state.currentUser.id;
+    option.value = String(user?.id || "");
+    option.textContent = userLabel(user);
+    option.selected = user?.id === state.currentUser.id;
     expensePayerSelect.appendChild(option);
 
     const label = document.createElement("label");
     label.innerHTML = `
-      <input type="checkbox" name="participantIds" value="${member.user.id}" checked />
-      <span>${escapeHtml(userLabel(member.user))}</span>
+      <input type="checkbox" name="participantIds" value="${user?.id || ""}" checked />
+      <span>${escapeHtml(userLabel(user))}</span>
     `;
     participantList.appendChild(label);
   });
@@ -797,7 +849,7 @@ function renderExpenseQuickFeed() {
   wrap.innerHTML = "";
 
   if (!state.expenses.length) {
-    wrap.innerHTML = '<div class="feed-item"><strong>Sin gastos recientes</strong><span class="muted small">Cuando guardes uno, lo veras aqui enseguida.</span></div>';
+    wrap.innerHTML = '<div class="feed-item"><strong>Aun no hay gastos</strong><span class="muted small">Cuando agregues uno, aqui veras de inmediato cuanto se dividio y quien queda pendiente.</span></div>';
     return;
   }
 
@@ -818,7 +870,7 @@ function renderActivityView() {
   wrap.innerHTML = "";
 
   if (!state.globalFeed.length) {
-    wrap.innerHTML = '<div class="feed-item"><strong>Sin actividad global</strong><span class="muted small">Todo lo que pase en tus grupos aparecera aqui.</span></div>';
+    wrap.innerHTML = '<div class="feed-item"><strong>Sin historial por ahora</strong><span class="muted small">Cuando alguien pague, agregue un gasto o salde una deuda, lo veras aqui con contexto util.</span></div>';
     return;
   }
 
@@ -867,8 +919,59 @@ function getUserNetFromBalances(balances) {
   if (!balances?.balances) {
     return 0;
   }
-  const entry = balances.balances.find((item) => item.user.id === state.currentUser.id);
+  const entry = balances.balances.find((item) => userId(item.user) === state.currentUser.id);
   return entry ? Number(entry.net || 0) : 0;
+}
+
+function getGroupSummary(activeCard) {
+  if (!state.expenses.length) {
+    return {
+      title: "Agrega el primer gasto",
+      caption: "Hazlo una vez y el grupo entiende en segundos quien pago y como se reparte.",
+      tone: "action",
+    };
+  }
+
+  const settlement = (state.balances?.settlements || []).find(
+    (item) => item.from_user?.id === state.currentUser.id || item.to_user?.id === state.currentUser.id
+  );
+
+  if (settlement) {
+    if (settlement.from_user?.id === state.currentUser.id) {
+      return {
+        title: `Debes ${money(settlement.amount)} a ${userLabel(settlement.to_user)}`,
+        caption: "Abre Saldos para registrar el pago o marcar la deuda como saldada.",
+        tone: "negative",
+      };
+    }
+
+    return {
+      title: `${userLabel(settlement.from_user)} te debe ${money(settlement.amount)}`,
+      caption: "Abre Saldos para cerrar esta cuenta en cuanto te paguen.",
+      tone: "positive",
+    };
+  }
+
+  const net = Number(activeCard?.my_net_balance || getUserNetFromBalances(state.balances));
+  if (net > 0) {
+    return {
+      title: `Vas a favor por ${money(net)}`,
+      caption: "Tu balance esta positivo. En Saldos puedes revisar el detalle completo.",
+      tone: "positive",
+    };
+  }
+  if (net < 0) {
+    return {
+      title: `Vas debiendo ${money(Math.abs(net))}`,
+      caption: "Entra a Saldos para ver a quien le toca recibir el pago.",
+      tone: "negative",
+    };
+  }
+  return {
+    title: "Estas balanceado",
+    caption: "No hay cuentas pendientes en este momento dentro de este grupo.",
+    tone: "neutral",
+  };
 }
 
 function balanceTone(value) {
@@ -894,8 +997,9 @@ function balanceText(value) {
 
 function expenseHeadline(expense) {
   const meId = state.currentUser.id;
-  const payerId = expense.payer.id;
+  const payerId = userId(expense.payer);
   const myShare = expense.participants.find((participant) => participant.id === meId || participant.user_id === meId);
+  const payerLabel = userLabel(expense.payer);
 
   if (payerId === meId) {
     const othersOwe = expense.participants.reduce((total, participant) => {
@@ -909,6 +1013,12 @@ function expenseHeadline(expense) {
   }
 
   if (myShare) {
+    return `${payerLabel} pago ${money(expense.amount)} · Tu debes ${money(myShare.share_amount)}`;
+  }
+
+  return `${payerLabel} pago ${money(expense.amount)}`;
+
+  if (myShare) {
     return `${expense.payer.username} pago ${money(expense.amount)} · Tu debes ${money(myShare.share_amount)}`;
   }
 
@@ -916,12 +1026,27 @@ function expenseHeadline(expense) {
 }
 
 function expenseDetail(expense) {
+  const participantNames = expense.participants.map((participant) => userLabel(participant)).join(", ");
+  return `Se dividio entre ${participantNames}`;
+
   const people = expense.participants.map((participant) => participant.username).join(", ");
   return `Se dividio entre ${people}`;
 }
 
+function memberUser(member) {
+  return member?.user || member || null;
+}
+
+function userId(user) {
+  const value = user?.id ?? user?.user_id ?? user?.user?.id ?? null;
+  return value ? Number(value) : null;
+}
+
 function userLabel(user) {
-  return user.display_name || user.full_name || user.username;
+  if (!user) {
+    return "Usuario sin nombre";
+  }
+  return user.display_name || user.full_name || user.username || user.email || "Usuario sin nombre";
 }
 
 function initials(user) {

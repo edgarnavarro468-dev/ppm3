@@ -123,6 +123,17 @@
                 <div id="active-group-balance" class="balance-hero">Sin saldo</div>
               </div>
 
+              <div class="group-action-strip">
+                <div id="active-group-summary" class="group-summary-card">
+                  <strong id="active-group-summary-title">Sin grupo activo</strong>
+                  <span id="active-group-summary-caption" class="muted small">Elige un grupo para ver saldos y agregar gastos sin rodeos.</span>
+                </div>
+                <div class="group-primary-actions">
+                  <button id="group-add-expense-btn" class="primary-btn" type="button">Agregar gasto</button>
+                  <button id="group-view-balances-btn" class="ghost-btn" type="button">Ver saldos</button>
+                </div>
+              </div>
+
               <div id="active-group-members" class="member-list"></div>
 
               <div class="subtab-row">
@@ -204,8 +215,8 @@
         <section id="view-activity" class="view-panel hidden">
           <div class="section-header">
             <div>
-              <h2>Actividad</h2>
-              <p class="muted small">Todo lo que paso en tus grupos, en orden.</p>
+              <h2>Historial</h2>
+              <p class="muted small">Quien pago, que se agrego y que ya quedo saldado.</p>
             </div>
           </div>
           <section class="surface-panel">
@@ -272,9 +283,9 @@
       <button id="add-expense-fab" class="fab-btn hidden" type="button">+ Agregar gasto</button>
 
       <nav class="bottom-tabs">
-        <button class="tab-btn active" data-view="groups" type="button">Grupos</button>
-        <button class="tab-btn" data-view="expenses" type="button">Gastos</button>
-        <button class="tab-btn" data-view="activity" type="button">Actividad</button>
+        <button class="tab-btn active" data-view="groups" type="button">Inicio</button>
+        <button class="tab-btn" data-view="expenses" type="button">Agregar</button>
+        <button class="tab-btn" data-view="activity" type="button">Historial</button>
         <button class="tab-btn" data-view="account" type="button">Cuenta</button>
       </nav>
 
