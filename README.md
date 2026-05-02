@@ -101,6 +101,16 @@ Y abre:
 
 - [http://localhost:8010/app/](http://localhost:8010/app/)
 
+### Opcion 3: backend para telefono fisico
+
+Si quieres probar el cliente Flutter en un telefono Android dentro de la misma red local, usa:
+
+```bat
+run_ppm_phone.bat
+```
+
+Ese script levanta FastAPI en `0.0.0.0:8000` y te muestra la URL correcta para el telefono en la red Wi-Fi.
+
 ## Como compartirla con amigos usando ngrok
 
 1. Levanta la app localmente

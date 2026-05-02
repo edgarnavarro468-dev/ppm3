@@ -3,6 +3,8 @@ from collections import deque
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from pathlib import Path
+import random
+import string
 from time import time
 from urllib.parse import urlparse
 
@@ -337,10 +339,43 @@ def display_name_for_user(user: User) -> str:
     return full_name or user.username
 
 
+def normalize_user_code(value: str) -> str:
+    normalized = (value or "").strip().upper().replace(" ", "")
+    if normalized and not normalized.startswith("PPM-") and normalized.replace("-", "").isalnum():
+        normalized = f"PPM-{normalized.replace('-', '')}"
+    return normalized
+
+
+def public_code_for_user(user: User) -> str:
+    code = (getattr(user, "public_code", "") or "").strip().upper()
+    return code or f"PPM-{user.id:06d}"
+
+
+def generate_user_public_code(session) -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    while True:
+        suffix = "".join(random.choice(alphabet) for _ in range(6))
+        code = f"PPM-{suffix}"
+        exists = session.query(User).filter(User.public_code == code).first()
+        if not exists:
+            return code
+
+
+def ensure_user_public_codes(session) -> None:
+    users = session.query(User).filter((User.public_code == "") | (User.public_code.is_(None))).all()
+    if not users:
+        return
+    for user in users:
+        user.public_code = generate_user_public_code(session)
+    session.commit()
+
+
 def serialize_user(user: User) -> dict:
     full_name = " ".join(part for part in [(user.first_name or "").strip(), (user.last_name or "").strip()] if part).strip()
     return {
         "id": user.id,
+        "public_code": public_code_for_user(user),
+        "invite_code": public_code_for_user(user),
         "username": user.username,
         "email": user.email,
         "first_name": user.first_name or "",
@@ -350,6 +385,16 @@ def serialize_user(user: User) -> dict:
         "phone_number": user.phone_number or "",
         "avatar_url": user.avatar_url or "",
     }
+
+
+def serialize_group_member(membership: GroupMember) -> dict:
+    data = serialize_user(membership.user)
+    role = (membership.role or "member").strip().lower()
+    if membership.group and membership.group.created_by == membership.user_id:
+        role = "host"
+    data["group_role"] = role
+    data["membership_status"] = (membership.status or "active").strip().lower()
+    return data
 
 
 def serialize_contact(contact: UserContact) -> dict:
@@ -377,7 +422,10 @@ def serialize_decision(decision: GroupDecision | None, member_count: int) -> dic
 
 
 def serialize_group(group: Group) -> dict:
-    members = sorted(group.members, key=lambda membership: membership.user.username.lower())
+    members = sorted(
+        [membership for membership in group.members if (membership.status or "active") == "active"],
+        key=lambda membership: membership.user.username.lower(),
+    )
     delete_decision = next(
         (decision for decision in group.decisions if decision.decision_type == "group_delete" and decision.status == "open"),
         None,
@@ -411,7 +459,7 @@ def serialize_group(group: Group) -> dict:
         "created_by": group.created_by,
         "created_at": group.created_at.isoformat(),
         "host": serialize_user(group.creator),
-        "members": [serialize_user(member.user) for member in members],
+        "members": [serialize_group_member(member) for member in members],
         "member_count": len(members),
         "payment_status": payment_status,
         "pending_member_count": pending_member_count,
@@ -477,6 +525,8 @@ def serialize_settlement(settlement: Settlement) -> dict:
         "amount": cents_to_amount(settlement.amount_cents),
         "notes": settlement.notes,
         "received_confirmed": settlement.received_confirmed,
+        "from_confirmed": settlement.from_confirmed,
+        "to_confirmed": settlement.to_confirmed,
         "received_confirmed_at": settlement.received_confirmed_at,
         "received_confirmed_by": serialize_user(settlement.confirmer) if settlement.confirmer else None,
         "created_by": serialize_user(settlement.creator),
@@ -508,14 +558,14 @@ def add_feed_event(session, group_id: int, actor_id: int | None, event_type: str
 
 
 def validate_group_member_ids(group: Group, user_ids: list[int]) -> None:
-    group_member_ids = {member.user_id for member in group.members}
+    group_member_ids = {member.user_id for member in group.members if (member.status or "active") == "active"}
     invalid_ids = [user_id for user_id in user_ids if user_id not in group_member_ids]
     if invalid_ids:
         raise HTTPException(status_code=400, detail="Hay usuarios que no pertenecen al grupo.")
 
 
 def ensure_group_member(group: Group, user_id: int) -> None:
-    if not any(member.user_id == user_id for member in group.members):
+    if not any(member.user_id == user_id and (member.status or "active") == "active" for member in group.members):
         raise HTTPException(status_code=403, detail="Ese usuario no pertenece al grupo.")
 
 
@@ -732,6 +782,7 @@ def register_user(payload: RegisterInput, request: Request):
             first_name=clean_name(payload.first_name),
             last_name=clean_name(payload.last_name),
             email=email,
+            public_code=generate_user_public_code(session),
             phone_number=clean_phone(payload.phone_number),
             avatar_url=clean_avatar_url(payload.avatar_url),
             password_hash=hash_password(validate_password_strength(payload.password)),
@@ -754,6 +805,10 @@ def login_user(payload: LoginInput, request: Request):
         user = session.query(User).filter(User.email == email).first()
         if not user or not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Credenciales invalidas.")
+        if not (user.public_code or "").strip():
+            user.public_code = generate_user_public_code(session)
+            session.commit()
+            session.refresh(user)
         return {"user": serialize_user(user)}
     finally:
         session.close()
@@ -764,7 +819,9 @@ def list_users(request: Request, q: str = Query(default="", max_length=120)):
     session = SessionLocal()
     try:
         enforce_rate_limit(request, "user_search")
+        ensure_user_public_codes(session)
         query_text = (q or "").strip().lower()
+        query_code = normalize_user_code(q).lower()
         users = session.query(User).order_by(User.username.asc()).all()
         if query_text:
             users = [
@@ -772,6 +829,9 @@ def list_users(request: Request, q: str = Query(default="", max_length=120)):
                 for user in users
                 if query_text in user.username.lower()
                 or query_text in user.email.lower()
+                or query_text == str(user.id)
+                or query_text in public_code_for_user(user).lower()
+                or query_code == public_code_for_user(user).lower()
                 or query_text in (user.first_name or "").lower()
                 or query_text in (user.last_name or "").lower()
                 or query_text in display_name_for_user(user).lower()
@@ -880,7 +940,7 @@ def list_user_groups(user_id: int):
         groups = (
             session.query(Group)
             .join(GroupMember, GroupMember.group_id == Group.id)
-            .filter(GroupMember.user_id == user_id)
+            .filter(GroupMember.user_id == user_id, GroupMember.status == "active")
             .options(
                 joinedload(Group.creator),
                 joinedload(Group.members).joinedload(GroupMember.user),
@@ -897,6 +957,29 @@ def list_user_groups(user_id: int):
         session.close()
 
 
+@app.get("/users/{user_id}/invitations")
+def list_user_invitations(user_id: int):
+    session = SessionLocal()
+    try:
+        sync_group_lifecycle(session)
+        invitations = (
+            session.query(Group)
+            .join(GroupMember, GroupMember.group_id == Group.id)
+            .filter(GroupMember.user_id == user_id, GroupMember.status == "pending")
+            .options(
+                joinedload(Group.creator),
+                joinedload(Group.members).joinedload(GroupMember.user),
+                joinedload(Group.decisions).joinedload(GroupDecision.votes),
+                joinedload(Group.decisions).joinedload(GroupDecision.requester),
+            )
+            .order_by(Group.created_at.desc())
+            .all()
+        )
+        return [serialize_group(group) for group in invitations]
+    finally:
+        session.close()
+
+
 @app.get("/users/{user_id}/summary")
 def get_user_summary(user_id: int):
     session = SessionLocal()
@@ -909,7 +992,7 @@ def get_user_summary(user_id: int):
         groups = (
             session.query(Group)
             .join(GroupMember, GroupMember.group_id == Group.id)
-            .filter(GroupMember.user_id == user_id)
+            .filter(GroupMember.user_id == user_id, GroupMember.status == "active")
             .options(
                 joinedload(Group.creator),
                 joinedload(Group.expenses).joinedload(Expense.participants).joinedload(ExpenseParticipant.user),
@@ -993,7 +1076,15 @@ def create_group(payload: GroupCreateInput, request: Request):
         session.flush()
 
         for member in members:
-            session.add(GroupMember(group_id=group.id, user_id=member.id))
+            is_creator = member.id == payload.creator_id
+            session.add(
+                GroupMember(
+                    group_id=group.id,
+                    user_id=member.id,
+                    role="host" if is_creator else "member",
+                    status="active" if is_creator else "pending",
+                )
+            )
 
         add_feed_event(
             session,
@@ -1002,6 +1093,15 @@ def create_group(payload: GroupCreateInput, request: Request):
             "group_created",
             f"{creator.username} creo el grupo '{group.name}' y quedo como anfitrion.",
         )
+        for member in members:
+            if member.id != payload.creator_id:
+                add_feed_event(
+                    session,
+                    group.id,
+                    creator.id,
+                    "member_invited",
+                    f"{creator.username} invito a {member.username} al grupo '{group.name}'.",
+                )
         session.commit()
 
         group = (
@@ -1067,16 +1167,19 @@ def add_group_member(group_id: int, payload: MemberAddInput):
         ensure_group_active(group)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
-        if any(member.user_id == payload.user_id for member in group.members):
+        existing_member = next((member for member in group.members if member.user_id == payload.user_id), None)
+        if existing_member and (existing_member.status or "active") == "active":
             raise HTTPException(status_code=400, detail="Ese usuario ya pertenece al grupo.")
+        if existing_member and existing_member.status == "pending":
+            raise HTTPException(status_code=400, detail="Ese usuario ya tiene una invitacion pendiente.")
 
-        session.add(GroupMember(group_id=group_id, user_id=payload.user_id))
+        session.add(GroupMember(group_id=group_id, user_id=payload.user_id, role="member", status="pending"))
         add_feed_event(
             session,
             group_id,
             payload.user_id,
-            "member_added",
-            f"{user.username} se unio al grupo '{group.name}'.",
+            "member_invited",
+            f"{user.username} recibio una invitacion para unirse al grupo '{group.name}'.",
         )
         session.commit()
 
@@ -1091,6 +1194,46 @@ def add_group_member(group_id: int, payload: MemberAddInput):
             )
             .first()
         )
+        return serialize_group(group)
+    finally:
+        session.close()
+
+
+@app.post("/groups/{group_id}/members/{user_id}/accept")
+def accept_group_invitation(group_id: int, user_id: int):
+    session = SessionLocal()
+    try:
+        sync_group_lifecycle(session)
+        group = (
+            session.query(Group)
+            .filter(Group.id == group_id)
+            .options(
+                joinedload(Group.creator),
+                joinedload(Group.members).joinedload(GroupMember.user),
+                joinedload(Group.decisions).joinedload(GroupDecision.votes),
+                joinedload(Group.decisions).joinedload(GroupDecision.requester),
+            )
+            .first()
+        )
+        if not group:
+            raise HTTPException(status_code=404, detail="Grupo no encontrado.")
+        ensure_group_active(group)
+        membership = next((member for member in group.members if member.user_id == user_id), None)
+        if not membership:
+            raise HTTPException(status_code=404, detail="Invitacion no encontrada.")
+        if (membership.status or "active") == "active":
+            raise HTTPException(status_code=400, detail="Ya perteneces a este grupo.")
+
+        membership.status = "active"
+        add_feed_event(
+            session,
+            group_id,
+            user_id,
+            "member_joined",
+            f"{membership.user.username} acepto la invitacion y se unio al grupo '{group.name}'.",
+        )
+        session.commit()
+        session.refresh(group)
         return serialize_group(group)
     finally:
         session.close()
@@ -1461,6 +1604,9 @@ def create_settlement(group_id: int, payload: SettlementCreateInput, request: Re
             amount_cents=amount_cents,
             notes=payload.notes.strip(),
             created_by=payload.actor_id,
+            from_confirmed=payload.actor_id == payload.from_user_id,
+            to_confirmed=payload.actor_id == payload.to_user_id,
+            received_confirmed=payload.actor_id == payload.from_user_id and payload.actor_id == payload.to_user_id,
         )
         session.add(settlement)
 
@@ -1471,7 +1617,7 @@ def create_settlement(group_id: int, payload: SettlementCreateInput, request: Re
             group_id,
             payload.actor_id,
             "manual_settlement",
-            f"{from_member.username} marco una liquidacion manual a favor de {to_member.username} por ${payload.amount:.2f}.",
+            f"{from_member.username} marco una liquidacion manual a favor de {to_member.username} por ${payload.amount:.2f}. Falta confirmacion de ambas partes.",
         )
         session.commit()
 
@@ -1512,20 +1658,30 @@ def confirm_settlement(settlement_id: int, payload: SettlementConfirmInput):
 
         ensure_group_member(settlement.group, payload.actor_id)
         ensure_group_active(settlement.group)
-        if payload.actor_id != settlement.to_user_id:
-            raise HTTPException(status_code=403, detail="Solo quien recibe el pago puede confirmarlo.")
+        if payload.actor_id not in {settlement.from_user_id, settlement.to_user_id}:
+            raise HTTPException(status_code=403, detail="Solo las dos partes de la liquidacion pueden confirmarla.")
         if settlement.received_confirmed:
             raise HTTPException(status_code=400, detail="Esta liquidacion ya fue confirmada.")
 
-        settlement.received_confirmed = True
-        settlement.received_confirmed_at = datetime.utcnow().isoformat()
-        settlement.received_confirmed_by = payload.actor_id
+        if payload.actor_id == settlement.from_user_id:
+            if settlement.from_confirmed:
+                raise HTTPException(status_code=400, detail="Ya confirmaste esta liquidacion.")
+            settlement.from_confirmed = True
+        if payload.actor_id == settlement.to_user_id:
+            if settlement.to_confirmed:
+                raise HTTPException(status_code=400, detail="Ya confirmaste esta liquidacion.")
+            settlement.to_confirmed = True
+
+        if settlement.from_confirmed and settlement.to_confirmed:
+            settlement.received_confirmed = True
+            settlement.received_confirmed_at = datetime.utcnow().isoformat()
+            settlement.received_confirmed_by = payload.actor_id
         add_feed_event(
             session,
             settlement.group_id,
             payload.actor_id,
             "settlement_confirmed",
-            f"{settlement.to_user.username} confirmo que ya recibio el pago de {settlement.from_user.username}.",
+            f"{display_name_for_user(settlement.from_user)} y {display_name_for_user(settlement.to_user)} actualizaron la confirmacion de una liquidacion.",
         )
         session.commit()
 

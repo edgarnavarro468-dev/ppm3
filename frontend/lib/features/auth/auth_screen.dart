@@ -16,13 +16,16 @@ class _AuthScreenState extends State<AuthScreen> {
   final _usernameController = TextEditingController();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _avatarUrlController = TextEditingController();
   late final TextEditingController _baseUrlController;
   bool _isLogin = true;
 
   @override
   void initState() {
     super.initState();
-    _baseUrlController = TextEditingController(text: PpmApiClient.defaultBaseUrl);
+    _baseUrlController =
+        TextEditingController(text: PpmApiClient.defaultBaseUrl);
   }
 
   @override
@@ -38,6 +41,8 @@ class _AuthScreenState extends State<AuthScreen> {
     _usernameController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _phoneController.dispose();
+    _avatarUrlController.dispose();
     _baseUrlController.dispose();
     super.dispose();
   }
@@ -88,8 +93,10 @@ class _AuthScreenState extends State<AuthScreen> {
                       children: [
                         SegmentedButton<bool>(
                           segments: const [
-                            ButtonSegment<bool>(value: true, label: Text('Entrar')),
-                            ButtonSegment<bool>(value: false, label: Text('Crear cuenta')),
+                            ButtonSegment<bool>(
+                                value: true, label: Text('Entrar')),
+                            ButtonSegment<bool>(
+                                value: false, label: Text('Crear cuenta')),
                           ],
                           selected: {_isLogin},
                           onSelectionChanged: (values) {
@@ -101,7 +108,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           controller: _baseUrlController,
                           decoration: const InputDecoration(
                             labelText: 'URL base de la API',
-                            helperText: 'Android emulator: http://10.0.2.2:8000',
+                            helperText:
+                                'Android emulator: http://10.0.2.2:8000',
                           ),
                           keyboardType: TextInputType.url,
                         ),
@@ -109,7 +117,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         if (!_isLogin) ...[
                           TextField(
                             controller: _usernameController,
-                            decoration: const InputDecoration(labelText: 'Usuario'),
+                            decoration:
+                                const InputDecoration(labelText: 'Usuario'),
                           ),
                           const SizedBox(height: 12),
                           Row(
@@ -117,23 +126,40 @@ class _AuthScreenState extends State<AuthScreen> {
                               Expanded(
                                 child: TextField(
                                   controller: _firstNameController,
-                                  decoration: const InputDecoration(labelText: 'Nombre'),
+                                  decoration: const InputDecoration(
+                                      labelText: 'Nombre'),
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: TextField(
                                   controller: _lastNameController,
-                                  decoration: const InputDecoration(labelText: 'Apellido'),
+                                  decoration: const InputDecoration(
+                                      labelText: 'Apellido'),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
+                          TextField(
+                            controller: _phoneController,
+                            decoration:
+                                const InputDecoration(labelText: 'Telefono'),
+                            keyboardType: TextInputType.phone,
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _avatarUrlController,
+                            decoration: const InputDecoration(
+                                labelText: 'URL de avatar'),
+                            keyboardType: TextInputType.url,
+                          ),
+                          const SizedBox(height: 12),
                         ],
                         TextField(
                           controller: _emailController,
-                          decoration: const InputDecoration(labelText: 'Correo'),
+                          decoration:
+                              const InputDecoration(labelText: 'Correo'),
                           keyboardType: TextInputType.emailAddress,
                           autocorrect: false,
                         ),
@@ -141,14 +167,19 @@ class _AuthScreenState extends State<AuthScreen> {
                         TextField(
                           controller: _passwordController,
                           decoration: InputDecoration(
-                            labelText: _isLogin ? 'Contrasena' : 'Contrasena (minimo 8 caracteres)',
+                            labelText: _isLogin
+                                ? 'Contrasena'
+                                : 'Contrasena (minimo 8 caracteres)',
                           ),
                           obscureText: true,
                         ),
                         const SizedBox(height: 18),
                         FilledButton(
-                          onPressed: state.isBusy ? null : () => _submit(context),
-                          child: Text(_isLogin ? 'Entrar y cargar grupos' : 'Crear cuenta y abrir app'),
+                          onPressed:
+                              state.isBusy ? null : () => _submit(context),
+                          child: Text(_isLogin
+                              ? 'Entrar y cargar grupos'
+                              : 'Crear cuenta y abrir app'),
                         ),
                         const SizedBox(height: 12),
                         Text(
@@ -190,19 +221,23 @@ class _AuthScreenState extends State<AuthScreen> {
           password: _passwordController.text,
           firstName: _firstNameController.text.trim(),
           lastName: _lastNameController.text.trim(),
+          phoneNumber: _phoneController.text.trim(),
+          avatarUrl: _avatarUrlController.text.trim(),
         );
       }
     } on ApiException catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     } catch (_) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ocurrio un error inesperado al autenticar.')),
+        const SnackBar(
+            content: Text('Ocurrio un error inesperado al autenticar.')),
       );
     }
   }
